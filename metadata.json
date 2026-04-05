@@ -1,0 +1,5 @@
+{
+  "name": "RhythmoSync MVP",
+  "description": "A professional Rhythmo Band dubbing tool MVP using React, Konva, and Wavesurfer for precise audio-visual synchronization.",
+  "requestFramePermissions": []
+}

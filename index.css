@@ -1,0 +1,324 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   RHYTHMOSYNC STUDIO — Design System
+   ============================================================ */
+
+/* ── 1. Design Tokens ──────────────────────────────────────── */
+:root {
+  /* Palette — slate bleuté professionnel */
+  --rs-bg-base: #080c14;
+  /* corps de l'app */
+  --rs-bg-surface: #0e1420;
+  /* panneaux principaux */
+  --rs-bg-elevated: #161d2e;
+  /* cartes, dropdowns */
+  --rs-bg-muted: #1e2842;
+  /* inputs, hover */
+
+  --rs-border: #1e2d47;
+  --rs-border-subtle: #131d30;
+
+  --rs-text-primary: #e8eaf0;
+  --rs-text-secondary: #7a8ba8;
+  --rs-text-muted: #3d5068;
+
+  /* Accent indigo-violet */
+  --rs-accent: #6366f1;
+  /* indigo-500 */
+  --rs-accent-hover: #818cf8;
+  /* indigo-400 */
+  --rs-accent-glow: rgba(99, 102, 241, 0.25);
+
+  /* Danger rouge doux */
+  --rs-danger: #ef4444;
+  --rs-danger-glow: rgba(239, 68, 68, 0.2);
+
+  /* Timing */
+  --rs-transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── 2. Base reset ─────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--rs-bg-base);
+  color: var(--rs-text-primary);
+
+  /* Premium typography */
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  /* Inter optical features */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  /* NATIVE FEEL */
+  user-select: none;
+  cursor: default;
+}
+
+/* Timecodes: always Roboto Mono */
+.font-mono,
+kbd,
+code,
+pre {
+  font-family: 'Roboto Mono', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Allow selection in editable fields */
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
+  cursor: text;
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--rs-accent);
+  color: #fff;
+}
+
+/* ── 3. GPU Compositing hints ──────────────────────────────── */
+.konvajs-content {
+  will-change: transform;
+  contain: layout style;
+}
+
+video {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* ── 4. Scrollbar — premium look ──────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--rs-border);
+  border-radius: 10px;
+  transition: background var(--rs-transition);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--rs-text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── 5. Micro-animations ───────────────────────────────────── */
+@keyframes rs-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rs-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rs-pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--rs-accent-glow);
+  }
+
+  50% {
+    box-shadow: 0 0 12px 3px var(--rs-accent-glow);
+  }
+}
+
+@keyframes rs-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Transition helpers for dropdowns / modals */
+.rs-dropdown-enter {
+  animation: rs-fade-in 180ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.rs-slide-up {
+  animation: rs-slide-up 200ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── 6. Component Tokens ───────────────────────────────────── */
+
+/* Buttons */
+.rs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: none;
+  cursor: pointer;
+  transition: all var(--rs-transition);
+  white-space: nowrap;
+}
+
+.rs-btn-primary {
+  background: var(--rs-accent);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(99, 102, 241, 0.6);
+}
+
+.rs-btn-primary:hover {
+  background: var(--rs-accent-hover);
+  box-shadow: 0 0 14px var(--rs-accent-glow), 0 0 0 1px rgba(129, 140, 248, 0.5);
+  transform: translateY(-1px);
+}
+
+.rs-btn-primary:active {
+  transform: translateY(0);
+}
+
+.rs-btn-ghost {
+  background: transparent;
+  color: var(--rs-text-secondary);
+  border: 1px solid var(--rs-border);
+}
+
+.rs-btn-ghost:hover {
+  background: var(--rs-bg-muted);
+  color: var(--rs-text-primary);
+  border-color: var(--rs-text-muted);
+}
+
+/* Icon buttons */
+.rs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--rs-text-secondary);
+  cursor: pointer;
+  transition: all var(--rs-transition);
+}
+
+.rs-icon-btn:hover {
+  background: var(--rs-bg-muted);
+  color: var(--rs-text-primary);
+}
+
+.rs-icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* Inputs */
+.rs-input {
+  width: 100%;
+  background: var(--rs-bg-base);
+  border: 1px solid var(--rs-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--rs-text-primary);
+  transition: all var(--rs-transition);
+  outline: none;
+}
+
+.rs-input:hover {
+  border-color: var(--rs-text-muted);
+}
+
+.rs-input:focus {
+  border-color: var(--rs-accent);
+  box-shadow: 0 0 0 3px var(--rs-accent-glow);
+}
+
+/* ── 7. Sync-line glow for the waveform red bar ────────────── */
+.rs-syncline-glow {
+  width: 2px;
+  background: var(--rs-danger);
+  box-shadow: 0 0 8px 2px var(--rs-danger-glow),
+    0 0 2px var(--rs-danger);
+  pointer-events: none;
+}
+
+/* ── 8. Heading / label utility ────────────────────────────── */
+.rs-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rs-text-muted);
+}
+
+/* ── 9. Glass surface (glassmorphism) ──────────────────────── */
+.rs-glass {
+  background: rgba(14, 20, 32, 0.85);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(30, 45, 71, 0.8);
+}
+
+/* ── 10. Performance: reduce animation cost ────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-pulse {
+    animation-duration: 2s;
+  }
+}
