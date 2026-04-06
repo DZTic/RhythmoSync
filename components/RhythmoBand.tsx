@@ -684,17 +684,36 @@ export const RhythmoBand = forwardRef<Konva.Stage, RhythmoBandProps>(({ width, h
   }, [totalLanes, width, height, zoomLevel, globalLaneHeight, laneHeights]);
 
   // ── rAF SYNC LOOP ────────────────────────────────────────────────────────
-  // Runs at 60fps but ONLY touches movingLayerRef, never the static layer.
-  // The idle-skip optimisation (lastX comparison) means that when the video is
-  // paused and nothing has moved, we call batchDraw() 0 times per second.
+  // Runs at 60/120fps and touches movingLayerRef.
+  // We extrapolate `video.currentTime` using `performance.now()` because the
+  // HTML5 video `currentTime` property only updates a few times per second.
+  // Without extrapolation, the rhythm band scrolls in jerky steps.
   useEffect(() => {
     let lastX = -Infinity;
+    let lastVideoTime = -1;
+    let lastPerfTime = performance.now();
 
     const loop = () => {
       if (movingLayerRef.current && videoElement) {
-        const newX = SYNC_LINE_POSITION_X - (videoElement.currentTime + syncOffset) * zoomLevel;
+        const perfNow = performance.now();
+        const currentVideoTime = videoElement.currentTime;
 
-        if (Math.abs(newX - lastX) > 0.1) {
+        // If the video browser clock advanced, resync our anchor
+        if (currentVideoTime !== lastVideoTime) {
+          lastVideoTime = currentVideoTime;
+          lastPerfTime = perfNow;
+        }
+
+        let extrapolatedTime = currentVideoTime;
+        if (!videoElement.paused && videoElement.playbackRate > 0) {
+          extrapolatedTime += ((perfNow - lastPerfTime) / 1000) * videoElement.playbackRate;
+        }
+
+        const exactX = SYNC_LINE_POSITION_X - (extrapolatedTime + syncOffset) * zoomLevel;
+        // Arrondir à l'entier le plus proche pour éviter le flou de rendu sous-pixel (smearing)
+        const newX = Math.round(exactX);
+
+        if (Math.abs(newX - lastX) >= 1) {
           movingLayerRef.current.x(newX);
           movingLayerRef.current.batchDraw();
           lastX = newX;
