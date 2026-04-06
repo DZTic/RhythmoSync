@@ -2,8 +2,6 @@
 
 **RhythmoSync Studio** est un outil professionnel de doublage et de création de bande rythmo, conçu pour offrir une expérience fluide et précise aux comédiens, directeurs artistiques et ingénieurs du son.
 
-
-
 ## ✨ Fonctionnalités Clés
 
 - **🎬 Synchronisation Vidéo-Rythmo** : Lecture fluide avec une bande rythmo interactive basée sur Canvas (Konva) pour une précision extrême.
