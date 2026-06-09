@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RhythmoSync.App</RootNamespace>
+    <AssemblyName>RhythmoSyncStudio</AssemblyName>
+    <ApplicationIcon Condition="Exists('icon.ico')">icon.ico</ApplicationIcon>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RhythmoSync.Core\RhythmoSync.Core.csproj" />
+    <ProjectReference Include="..\RhythmoSync.Media\RhythmoSync.Media.csproj" />
+  </ItemGroup>
+
+</Project>
