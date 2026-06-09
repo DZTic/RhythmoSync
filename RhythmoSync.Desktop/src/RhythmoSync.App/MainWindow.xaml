@@ -1,0 +1,133 @@
+<Window x:Class="RhythmoSync.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:RhythmoSync.App.Controls"
+        Title="RhythmoSync Studio"
+        Background="{StaticResource BgDeep}"
+        WindowStartupLocation="CenterScreen"
+        Width="1400" Height="900"
+        WindowState="Maximized"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+
+    <DockPanel>
+
+        <!-- ── Barre d'outils ─────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="8,6">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <TextBlock Text="🎙️ RhythmoSync" Foreground="{StaticResource TextPrimary}"
+                               FontWeight="Bold" FontSize="14" VerticalAlignment="Center" Margin="2,0,14,0"/>
+                    <Button x:Name="NewButton" Style="{StaticResource ToolButton}" Content="Nouveau" Click="OnNewProject"/>
+                    <Button x:Name="OpenButton" Style="{StaticResource ToolButton}" Content="Ouvrir…" Click="OnOpenProject"/>
+                    <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Content="Enregistrer" Click="OnSaveProject"/>
+                    <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
+                    <Button x:Name="ImportVideoButton" Style="{StaticResource AccentButton}" Content="🎬 Importer une vidéo" Click="OnImportVideo"/>
+                    <Button x:Name="AddBlockButton" Style="{StaticResource ToolButton}" Content="＋ Bloc" Click="OnAddBlock"
+                            ToolTip="Ajouter un bloc à la position de lecture (double-clic sur la bande aussi)"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <TextBlock Style="{StaticResource MutedText}" Text="Zoom"/>
+                    <Slider x:Name="ZoomSlider" Width="110" Minimum="40" Maximum="600" Value="200"
+                            VerticalAlignment="Center" Margin="6,0,10,0" ValueChanged="OnZoomChanged"/>
+                    <CheckBox x:Name="SnapCheck" Content="Snap" IsChecked="True" Checked="OnSnapChanged" Unchecked="OnSnapChanged"
+                              Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11"/>
+                    <TextBlock Style="{StaticResource MutedText}" Text="Pistes"/>
+                    <Button x:Name="LaneMinusButton" Style="{StaticResource ToolButton}" Content="−" Padding="7,2" Margin="6,0,0,0" Click="OnLaneMinus"/>
+                    <TextBlock x:Name="LaneCountText" Text="3" Foreground="{StaticResource TextPrimary}"
+                               VerticalAlignment="Center" Margin="7,0" FontSize="12" FontWeight="Bold"/>
+                    <Button x:Name="LanePlusButton" Style="{StaticResource ToolButton}" Content="＋" Padding="7,2" Margin="0,0,12,0" Click="OnLanePlus"/>
+                    <TextBlock Style="{StaticResource MutedText}" Text="FPS"/>
+                    <ComboBox x:Name="FpsCombo" Width="64" Margin="6,0,0,0" VerticalAlignment="Center"
+                              SelectionChanged="OnFpsChanged" FontSize="11"/>
+                </StackPanel>
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <!-- ── Barre d'état ───────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="10,3">
+            <DockPanel>
+                <TextBlock x:Name="StatusLeft" Style="{StaticResource MutedText}" Text="Prêt." DockPanel.Dock="Left"/>
+                <TextBlock x:Name="StatusRight" Style="{StaticResource MutedText}" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <!-- ── Zone centrale ──────────────────────────────────────────────── -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Vidéo -->
+            <Border Grid.Row="0" Background="Black">
+                <Grid>
+                    <MediaElement x:Name="Media"
+                                  LoadedBehavior="Manual"
+                                  UnloadedBehavior="Manual"
+                                  ScrubbingEnabled="True"
+                                  Stretch="Uniform"
+                                  MediaOpened="OnMediaOpened"
+                                  MediaEnded="OnMediaEnded"
+                                  MediaFailed="OnMediaFailed"/>
+                    <TextBlock x:Name="VideoPlaceholder"
+                               Text="Importez une vidéo pour commencer  (Ctrl+I)"
+                               Foreground="{StaticResource TextMuted}" FontSize="16"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- Transport -->
+            <Border Grid.Row="1" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1" Padding="10,6">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                        <Button x:Name="PlayButton" Style="{StaticResource AccentButton}" Content="▶  Lecture"
+                                Width="110" Click="OnPlayPause"/>
+                        <TextBlock x:Name="TimecodeText" Text="00:00:00:00" Foreground="{StaticResource TextPrimary}"
+                                   FontFamily="Consolas" FontSize="20" FontWeight="Bold"
+                                   VerticalAlignment="Center" Margin="16,0,6,0"/>
+                        <TextBlock x:Name="DurationText" Text="/ 00:00:00:00" Foreground="{StaticResource TextMuted}"
+                                   FontFamily="Consolas" FontSize="13" VerticalAlignment="Center" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                        <TextBlock Style="{StaticResource MutedText}" Text="Vitesse"/>
+                        <ComboBox x:Name="RateCombo" Width="64" Margin="6,0,14,0" VerticalAlignment="Center"
+                                  SelectionChanged="OnRateChanged" FontSize="11"/>
+                        <TextBlock Style="{StaticResource MutedText}" Text="Volume"/>
+                        <Slider x:Name="VolumeSlider" Width="90" Minimum="0" Maximum="1" Value="0.9"
+                                VerticalAlignment="Center" Margin="6,0,0,0" ValueChanged="OnVolumeChanged"/>
+                    </StackPanel>
+                    <Border/>
+                </DockPanel>
+            </Border>
+
+            <!-- Bande rythmo + zone d'édition de texte superposée -->
+            <Grid Grid.Row="2">
+                <controls:RhythmoBandControl x:Name="Band"/>
+                <Canvas>
+                    <TextBox x:Name="EditBox"
+                             Visibility="Collapsed"
+                             Background="{StaticResource BgPanel}"
+                             Foreground="White"
+                             FontFamily="Consolas" FontWeight="Bold"
+                             TextAlignment="Center" VerticalContentAlignment="Center"
+                             BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                             PreviewKeyDown="OnEditBoxKeyDown"
+                             LostFocus="OnEditBoxLostFocus"/>
+                </Canvas>
+            </Grid>
+
+            <!-- Forme d'onde -->
+            <controls:WaveformControl x:Name="Wave" Grid.Row="3" Height="70"/>
+        </Grid>
+
+    </DockPanel>
+</Window>
