@@ -351,6 +351,47 @@ public partial class MainWindow : Window
         UpdateStatusBar();
     }
 
+    // ── Export vidéo ─────────────────────────────────────────────────────────
+
+    private async void OnExportVideo(object sender, RoutedEventArgs e)
+    {
+        if (!_mediaReady || _state.VideoPath is null)
+        {
+            MessageBox.Show(this, "Importez d'abord une vidéo avant d'exporter.",
+                "Export", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (_state.Dialogues.Count == 0)
+        {
+            MessageBox.Show(this, "Le projet ne contient aucun bloc de dialogue à incruster.",
+                "Export", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (_ffmpegPath is null && !await TryDownloadFfmpegAsync())
+        {
+            MessageBox.Show(this, "FFmpeg est indispensable pour l'export vidéo.",
+                "Export", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var nativeWidth = Media.NaturalVideoWidth;
+        var nativeHeight = Media.NaturalVideoHeight;
+        if (nativeWidth <= 0 || nativeHeight <= 0)
+        {
+            MessageBox.Show(this, "Dimensions de la vidéo inconnues — réessayez après le chargement complet.",
+                "Export", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (_isPlaying) TogglePlay();
+        var dialog = new Export.ExportDialog(_state, _state.VideoPath, _ffmpegPath!,
+            _duration, nativeWidth, nativeHeight)
+        {
+            Owner = this,
+        };
+        dialog.ShowDialog();
+    }
+
     // ── Blocs ─────────────────────────────────────────────────────────────────
 
     private void OnAddBlock(object sender, RoutedEventArgs e)

@@ -26,6 +26,8 @@
                     <Button x:Name="ImportVideoButton" Style="{StaticResource AccentButton}" Content="🎬 Importer une vidéo" Click="OnImportVideo"/>
                     <Button x:Name="AddBlockButton" Style="{StaticResource ToolButton}" Content="＋ Bloc" Click="OnAddBlock"
                             ToolTip="Ajouter un bloc à la position de lecture (double-clic sur la bande aussi)"/>
+                    <Button x:Name="ExportVideoButton" Style="{StaticResource ToolButton}" Content="🎞 Exporter" Click="OnExportVideo"
+                            ToolTip="Exporter la vidéo avec la bande rythmo incrustée (MP4)"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
