@@ -16,7 +16,10 @@ RhythmoSync.Desktop/
     ├── RhythmoSync.Media/     # Intégration FFmpeg (aucune dépendance UI)
     │   ├── FfmpegLocator.cs   #   Localisation (exe, ancienne app Tauri, PATH)
     │   ├── FfmpegDownloader.cs#   Téléchargement auto (gyan.dev essentials)
-    │   └── WaveformGenerator.cs # PCM s16le streamé → pics min/max (jamais tout en RAM)
+    │   ├── WaveformGenerator.cs # PCM s16le streamé → pics min/max (jamais tout en RAM)
+    │   ├── VideoProber.cs     #   Sonde conteneur/codec → ce format exige-t-il un proxy ?
+    │   ├── ProxyGenerator.cs  #   Proxy All-Intra H.264 ≤ 1080p + cache durable
+    │   └── VideoExporter.cs   #   Export MP4 avec bande incrustée (+ ExportLayout.cs)
     └── RhythmoSync.App/       # Application WPF
         ├── MainWindow.*       #   Transport, horloge extrapolée, raccourcis, fichiers
         └── Controls/
@@ -64,6 +67,20 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
   - **Audio de la source inclus** (l'ancien export produisait des vidéos muettes) — désactivable.
   - Letterbox auto (désactivable), encodeur GPU détecté (NVENC/AMF/QuickSync) ou CPU forcé,
     plage d'export optionnelle, **annulation** en cours d'encodage, progression %/fps/ETA.
+- **Proxy All-Intra pour les formats illisibles** (MKV, WebM, HEVC, AV1… — port de
+  generate_proxy_video, amélioré) :
+  - Flux hybride : sonde FFmpeg à l'import (formats connus illisibles → proxy direct),
+    sinon lecture native avec repli proxy proposé si MediaElement échoue.
+  - H.264 All-Intra (chaque image est un keyframe → seeking instantané), ≤ 1080p sans
+    agrandissement, encodeur GPU détecté ou libx264, sortie yuv420p (les sources 10 bits
+    donnaient sinon un proxy lui-même illisible).
+  - **Non bloquant** : progression et annulation dans le panneau vidéo, bande et forme
+    d'onde utilisables pendant l'encodage.
+  - Cache durable (`%APPDATA%\RhythmoSync Studio\proxies`), invalidé si le fichier source
+    change (taille/date — l'ancien hash du seul chemin rejouait un proxy périmé),
+    bouton de purge avec taille dans la barre d'état.
+  - Le `.rsp`, l'export, le letterbox et la waveform utilisent **toujours l'original** ;
+    seule la lecture passe par le proxy.
 
 ### Raccourcis
 
@@ -81,7 +98,6 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 ## Étapes suivantes (non incluses dans la V1)
 
 - Transcription Whisper (port de `diarization.rs` : lancer whisper.cpp en sous-processus).
-- Vidéos proxy All-Intra pour les codecs exotiques (MKV/HEVC) que le décodeur Windows refuse.
 - Mixeur audio multi-pistes (NAudio ou MediaPlayer multiples).
 - Recherche/remplacement global et décalage de timeline (déjà portés dans `ProjectState`,
   il ne manque que les boîtes de dialogue).

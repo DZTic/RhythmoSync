@@ -2,7 +2,17 @@
 
 **RhythmoSync Studio** est un outil professionnel de doublage et de création de bande rythmo, conçu pour offrir une expérience fluide et précise aux comédiens, directeurs artistiques et ingénieurs du son.
 
-## ✨ Fonctionnalités Clés
+> ## ⚡ Nouvelle version : application Windows **native** (C# / WPF, .NET 8)
+>
+> RhythmoSync est en cours de réécriture en **véritable application Windows native**, sans Tauri ni WebView,
+> pour de bien meilleures performances (rendu GPU « retained mode », virtualisation, RAM constante).
+> Le nouveau code vit dans **[`RhythmoSync.Desktop/`](RhythmoSync.Desktop/README.md)** — voir son README
+> pour compiler, lancer et connaître les fonctionnalités déjà portées (lecture, bande rythmo, forme d'onde,
+> undo/redo, projets `.rsp`, **export vidéo MP4 avec bande incrustée**).
+>
+> La version React / Tauri décrite ci-dessous reste disponible **comme référence** pendant la migration.
+
+## ✨ Fonctionnalités Clés *(version React / Tauri — référence)*
 
 - **🎬 Synchronisation Vidéo-Rythmo** : Lecture fluide avec une bande rythmo interactive basée sur Canvas (Konva) pour une précision extrême.
 - **🔊 Mixeur Audio Multi-pistes** : Gérez indépendamment les pistes originales, les voix enregistrées et les bruitages avec fonctions Mute/Solo.

@@ -54,6 +54,10 @@
                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="10,3">
             <DockPanel>
                 <TextBlock x:Name="StatusLeft" Style="{StaticResource MutedText}" Text="Prêt." DockPanel.Dock="Left"/>
+                <Button x:Name="ProxyCacheButton" DockPanel.Dock="Right" Style="{StaticResource ToolButton}"
+                        FontSize="11" Padding="6,1" Margin="10,0,0,0" Visibility="Collapsed"
+                        Click="OnClearProxyCache"
+                        ToolTip="Supprimer les copies de lecture (proxys) — elles seront régénérées au besoin"/>
                 <TextBlock x:Name="StatusRight" Style="{StaticResource MutedText}" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                 <Border/>
             </DockPanel>
@@ -83,6 +87,19 @@
                                Text="Importez une vidéo pour commencer  (Ctrl+I)"
                                Foreground="{StaticResource TextMuted}" FontSize="16"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <!-- Encodage du proxy (non bloquant : bande et waveform restent utilisables) -->
+                    <StackPanel x:Name="ProxyPanel" Visibility="Collapsed" Width="360"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="ProxyText" Text="Préparation de la copie de lecture…"
+                                   Foreground="{StaticResource TextPrimary}" FontSize="14"
+                                   HorizontalAlignment="Center" Margin="0,0,0,4" TextAlignment="Center"/>
+                        <TextBlock Text="Ce format n'est pas lu par Windows — vous pouvez déjà éditer la bande."
+                                   Foreground="{StaticResource TextMuted}" FontSize="11"
+                                   HorizontalAlignment="Center" Margin="0,0,0,10" TextAlignment="Center" TextWrapping="Wrap"/>
+                        <ProgressBar x:Name="ProxyBar" Height="8" Minimum="0" Maximum="100"/>
+                        <Button x:Name="ProxyCancelButton" Style="{StaticResource ToolButton}" Content="Annuler"
+                                HorizontalAlignment="Center" Margin="0,12,0,0" Click="OnProxyCancel"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 
