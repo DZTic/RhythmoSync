@@ -34,6 +34,18 @@ public partial class MainWindow : Window
     private DialogueBlock? _editingBlock;
     private int _frameCount;
 
+    // ── Proxy All-Intra ───────────────────────────────────────────────────────
+    // _state.VideoPath reste TOUJOURS le fichier original (.rsp, export, waveform,
+    // letterbox) ; seul Media.Source reçoit le proxy quand le format est illisible.
+    private string? _playbackPath;          // ce que lit réellement MediaElement
+    private VideoProbeResult? _videoInfo;   // sonde FFmpeg du fichier ORIGINAL
+    private CancellationTokenSource? _proxyCts;
+    private string? _waveformVideoPath;     // anti-doublon (proxy + MediaOpened)
+
+    private bool IsPlayingProxy =>
+        _playbackPath is not null && _state.VideoPath is not null &&
+        !string.Equals(_playbackPath, _state.VideoPath, StringComparison.OrdinalIgnoreCase);
+
     public MainWindow()
     {
         InitializeComponent();
@@ -64,6 +76,7 @@ public partial class MainWindow : Window
 
         _ffmpegPath = FfmpegLocator.Find();
         UpdateStatusBar();
+        UpdateProxyCacheButton();
 
         PreviewKeyDown += OnWindowKeyDown;
         CompositionTarget.Rendering += OnRendering;
@@ -161,14 +174,36 @@ public partial class MainWindow : Window
         Media.Pause();
     }
 
-    private void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
+    private async void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
     {
         _mediaReady = false;
         VideoPlaceholder.Visibility = Visibility.Visible;
+
+        var original = _state.VideoPath;
+        // Repli du flux hybride : un format que la sonde croyait lisible a échoué
+        // → on propose le proxy. Sauf si c'est déjà le proxy qui échoue (pas de boucle).
+        if (original is not null && !IsPlayingProxy)
+        {
+            var answer = MessageBox.Show(this,
+                "Windows ne peut pas lire cette vidéo : " + (e.ErrorException?.Message ?? "format non supporté") +
+                "\n\nVoulez-vous générer une copie de lecture (proxy H.264) avec FFmpeg ?\n" +
+                "La vidéo originale reste utilisée pour la sauvegarde et l'export.",
+                "Format non supporté", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Yes)
+            {
+                if (_videoInfo is null && _ffmpegPath is not null)
+                {
+                    try { _videoInfo = await VideoProber.ProbeAsync(_ffmpegPath, original); }
+                    catch { }
+                }
+                await LoadViaProxyAsync(original);
+                return;
+            }
+        }
+
         MessageBox.Show(this,
             "Impossible de lire cette vidéo : " + (e.ErrorException?.Message ?? "format non supporté") +
-            "\n\nLe lecteur Windows natif lit les MP4 (H.264/AAC), WMV et AVI. " +
-            "Pour les autres formats (MKV, HEVC…), convertissez la vidéo ou installez les codecs.",
+            "\n\nLe lecteur Windows natif lit les MP4 (H.264/AAC), WMV et AVI.",
             "Erreur vidéo", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
@@ -178,6 +213,11 @@ public partial class MainWindow : Window
     {
         var videoPath = _state.VideoPath;
         if (videoPath is null || !File.Exists(videoPath)) return;
+
+        // Déjà lancée pour cette vidéo (cas proxy : démarrée pendant l'encodage,
+        // puis MediaOpened du proxy re-déclenche) — ne pas tout recommencer.
+        if (videoPath == _waveformVideoPath) return;
+        _waveformVideoPath = videoPath;
 
         if (_ffmpegPath is null && !await TryDownloadFfmpegAsync())
         {
@@ -192,7 +232,9 @@ public partial class MainWindow : Window
         StatusLeft.Text = "Génération de la forme d'onde…";
         try
         {
-            var numSamples = (int)Math.Clamp(_duration * 40, 2000, 65536);
+            // _duration vaut 0 quand on démarre pendant l'encodage du proxy → sonde
+            var knownDuration = _duration > 0 ? _duration : _videoInfo?.Duration ?? 0;
+            var numSamples = (int)Math.Clamp(knownDuration * 40, 2000, 65536);
             var data = await Task.Run(() => WaveformGenerator.GenerateAsync(_ffmpegPath, videoPath, numSamples, cts.Token), cts.Token);
             if (!cts.IsCancellationRequested)
             {
@@ -210,11 +252,11 @@ public partial class MainWindow : Window
     private bool _ffmpegDownloadDeclined;
 
     /// <summary>Propose et effectue le téléchargement de FFmpeg (équivalent du flux de l'ancienne app).</summary>
-    private async Task<bool> TryDownloadFfmpegAsync()
+    private async Task<bool> TryDownloadFfmpegAsync(string purpose = "générer la forme d'onde audio")
     {
         if (_ffmpegDownloadDeclined) return false;
         var answer = MessageBox.Show(this,
-            "FFmpeg est nécessaire pour générer la forme d'onde audio.\n\n" +
+            $"FFmpeg est nécessaire pour {purpose}.\n\n" +
             "Voulez-vous le télécharger automatiquement (~90 Mo, une seule fois) ?",
             "FFmpeg requis", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes)
@@ -254,14 +296,20 @@ public partial class MainWindow : Window
 
     private void UnloadVideo()
     {
+        _proxyCts?.Cancel();
         Media.Stop();
         Media.Source = null;
         _mediaReady = false;
         _isPlaying = false;
         _duration = 0;
+        _playbackPath = null;
+        _videoInfo = null;
+        _waveformVideoPath = null;
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
         DurationText.Text = "/ 00:00:00:00";
+        ProxyPanel.Visibility = Visibility.Collapsed;
+        VideoPlaceholder.Text = "Importez une vidéo pour commencer  (Ctrl+I)";
         VideoPlaceholder.Visibility = Visibility.Visible;
         Wave.SetWaveform(null);
         UpdateStatusBar();
@@ -334,21 +382,131 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Vidéo|*.mp4;*.m4v;*.mov;*.wmv;*.avi;*.mkv;*.webm|Tous les fichiers (*.*)|*.*",
+            Filter = "Vidéo|*.mp4;*.m4v;*.mov;*.wmv;*.avi;*.mkv;*.webm;*.flv;*.ts;*.m2ts;*.mpg;*.mpeg;*.ogv|Tous les fichiers (*.*)|*.*",
         };
         if (dialog.ShowDialog(this) != true) return;
         LoadVideo(dialog.FileName);
     }
 
-    private void LoadVideo(string path)
+    /// <summary>
+    /// Flux hybride : sonde FFmpeg → les formats connus illisibles (MKV, HEVC…)
+    /// partent directement en proxy All-Intra ; les autres tentent la lecture
+    /// native, avec repli proxy proposé par OnMediaFailed.
+    /// </summary>
+    private async void LoadVideo(string path)
     {
-        _state.VideoPath = path;
+        _state.VideoPath = path; // l'original, toujours
+        _proxyCts?.Cancel();
+        _videoInfo = null;
+        _waveformVideoPath = null; // le garde anti-doublon ne vaut que pour CE chargement
+        ProxyPanel.Visibility = Visibility.Collapsed;
+        VideoPlaceholder.Text = "Chargement de la vidéo…";
+        VideoPlaceholder.Visibility = Visibility.Visible;
+        UpdateStatusBar();
+
+        if (_ffmpegPath is not null)
+        {
+            try { _videoInfo = await VideoProber.ProbeAsync(_ffmpegPath, path); }
+            catch { /* sonde indisponible : tentative native, MediaFailed couvrira */ }
+        }
+
+        if (_videoInfo is { NeedsProxy: true })
+            await LoadViaProxyAsync(path);
+        else
+            PlayFile(path);
+    }
+
+    /// <summary>Branche réellement un fichier (original ou proxy) sur MediaElement.</summary>
+    private void PlayFile(string playbackPath)
+    {
+        _playbackPath = playbackPath;
         _mediaReady = false;
-        Media.Source = new Uri(path);
+        Media.Source = new Uri(playbackPath);
         // MediaOpened prendra le relais (durée, waveform, première image)
         Media.Play();
         Media.Pause();
         UpdateStatusBar();
+    }
+
+    /// <summary>
+    /// Charge la vidéo via un proxy : cache si disponible, sinon encodage non
+    /// bloquant (progression dans le placeholder, bande et waveform utilisables).
+    /// </summary>
+    private async Task LoadViaProxyAsync(string originalPath)
+    {
+        if (_ffmpegPath is null && !await TryDownloadFfmpegAsync("lire ce format vidéo (une copie de lecture doit être encodée)"))
+        {
+            VideoPlaceholder.Text = "Format non lu par Windows — FFmpeg est requis pour générer une copie de lecture.";
+            return;
+        }
+
+        if (ProxyGenerator.TryGetCached(originalPath) is { } cached)
+        {
+            StatusLeft.Text = "Copie de lecture trouvée dans le cache.";
+            PlayFile(cached);
+            return;
+        }
+
+        // La waveform vient de l'original : on la lance sans attendre le proxy
+        _ = GenerateWaveformAsync();
+
+        _proxyCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _proxyCts = cts;
+        VideoPlaceholder.Visibility = Visibility.Collapsed;
+        ProxyPanel.Visibility = Visibility.Visible;
+        ProxyBar.Value = 0;
+        var reason = _videoInfo?.Reason is { Length: > 0 } r ? r : "Format non lu par Windows";
+        ProxyText.Text = $"Encodage de la copie de lecture… 0 %\n({reason})";
+
+        try
+        {
+            var progress = new Progress<double>(p =>
+            {
+                ProxyBar.Value = p * 100;
+                ProxyText.Text = $"Encodage de la copie de lecture… {p * 100:0} %\n({reason})";
+            });
+            var duration = _videoInfo?.Duration ?? 0;
+            var ffmpeg = _ffmpegPath!;
+            var proxyPath = await Task.Run(
+                () => ProxyGenerator.GenerateAsync(ffmpeg, originalPath, duration, progress, cts.Token), cts.Token);
+            if (cts.IsCancellationRequested) return;
+            PlayFile(proxyPath);
+        }
+        catch (OperationCanceledException)
+        {
+            VideoPlaceholder.Text = "Encodage de la copie de lecture annulé.";
+            VideoPlaceholder.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            VideoPlaceholder.Text = "Impossible de générer la copie de lecture.";
+            VideoPlaceholder.Visibility = Visibility.Visible;
+            MessageBox.Show(this, "Échec de l'encodage du proxy : " + ex.Message,
+                "Erreur proxy", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (_proxyCts == cts) ProxyPanel.Visibility = Visibility.Collapsed;
+            UpdateStatusBar();
+            UpdateProxyCacheButton();
+        }
+    }
+
+    private void OnProxyCancel(object sender, RoutedEventArgs e) => _proxyCts?.Cancel();
+
+    private void OnClearProxyCache(object sender, RoutedEventArgs e)
+    {
+        var size = ProxyGenerator.GetCacheSizeBytes();
+        if (size == 0) { UpdateStatusBar(); return; }
+        if (MessageBox.Show(this,
+                $"Supprimer toutes les copies de lecture ({ProxyGenerator.FormatSize(size)}) ?\n" +
+                "Elles seront régénérées automatiquement au besoin.",
+                "Vider le cache des proxys", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        var freed = ProxyGenerator.ClearCache();
+        StatusLeft.Text = $"Cache des proxys vidé ({ProxyGenerator.FormatSize(freed)} libérés).";
+        UpdateProxyCacheButton();
     }
 
     // ── Export vidéo ─────────────────────────────────────────────────────────
@@ -367,15 +525,19 @@ public partial class MainWindow : Window
                 "Export", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (_ffmpegPath is null && !await TryDownloadFfmpegAsync())
+        if (_ffmpegPath is null && !await TryDownloadFfmpegAsync("exporter la vidéo"))
         {
             MessageBox.Show(this, "FFmpeg est indispensable pour l'export vidéo.",
                 "Export", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        var nativeWidth = Media.NaturalVideoWidth;
-        var nativeHeight = Media.NaturalVideoHeight;
+        // L'export décode l'ORIGINAL : si on lit un proxy (1080p max), les dimensions
+        // de MediaElement seraient celles du proxy → on prend celles de la sonde.
+        var nativeWidth = IsPlayingProxy && _videoInfo is { Width: > 0, Height: > 0 }
+            ? _videoInfo.Width : Media.NaturalVideoWidth;
+        var nativeHeight = IsPlayingProxy && _videoInfo is { Width: > 0, Height: > 0 }
+            ? _videoInfo.Height : Media.NaturalVideoHeight;
         if (nativeWidth <= 0 || nativeHeight <= 0)
         {
             MessageBox.Show(this, "Dimensions de la vidéo inconnues — réessayez après le chargement complet.",
@@ -613,8 +775,21 @@ public partial class MainWindow : Window
     private void UpdateStatusBar()
     {
         var parts = new List<string> { $"{_state.Dialogues.Count} bloc(s)" };
-        if (_state.VideoPath is { } vp) parts.Add(Path.GetFileName(vp));
+        if (_state.VideoPath is { } vp)
+            parts.Add(Path.GetFileName(vp) + (IsPlayingProxy ? "  (lecture via proxy)" : ""));
         parts.Add(_ffmpegPath is null ? "FFmpeg : introuvable" : "FFmpeg : OK");
         StatusRight.Text = string.Join("   •   ", parts);
+    }
+
+    /// <summary>
+    /// Séparé d'UpdateStatusBar (appelé à chaque DialoguesChanged, y compris
+    /// pendant les drags) : on n'énumère le dossier du cache qu'aux moments utiles.
+    /// </summary>
+    private void UpdateProxyCacheButton()
+    {
+        var cacheSize = ProxyGenerator.GetCacheSizeBytes();
+        ProxyCacheButton.Visibility = cacheSize > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (cacheSize > 0)
+            ProxyCacheButton.Content = $"🧹 Proxys : {ProxyGenerator.FormatSize(cacheSize)}";
     }
 }
