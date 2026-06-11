@@ -128,6 +128,8 @@ public static class WaveformGenerator
         };
         psi.ArgumentList.Add("-hide_banner");
         psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(mediaPath);
+        // -t 0.05 : les infos de flux sont déjà imprimées, inutile de décoder le fichier
+        psi.ArgumentList.Add("-t"); psi.ArgumentList.Add("0.05");
         psi.ArgumentList.Add("-f"); psi.ArgumentList.Add("null");
         psi.ArgumentList.Add("-");
 
