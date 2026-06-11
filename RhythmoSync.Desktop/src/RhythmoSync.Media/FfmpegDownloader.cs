@@ -10,7 +10,13 @@ namespace RhythmoSync.Media;
 /// </summary>
 public static class FfmpegDownloader
 {
-    private const string DownloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+    // Deux sources : gyan.dev (comme l'ancienne app) puis GitHub en secours —
+    // sur certaines machines la chaîne de certificats de gyan.dev n'est pas approuvée.
+    private static readonly string[] DownloadUrls =
+    [
+        "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    ];
 
     public static string TargetPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -19,6 +25,25 @@ public static class FfmpegDownloader
     /// <param name="progress">Progression du téléchargement, 0 → 1 (puis 1 pendant l'extraction).</param>
     public static async Task<string> DownloadAsync(IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        Exception? lastError = null;
+        foreach (var url in DownloadUrls)
+        {
+            try
+            {
+                return await DownloadFromAsync(url, progress, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+        }
+        throw new InvalidOperationException(
+            "Téléchargement de FFmpeg impossible depuis toutes les sources : " + lastError?.Message, lastError);
+    }
+
+    private static async Task<string> DownloadFromAsync(string url, IProgress<double>? progress, CancellationToken ct)
+    {
         var targetPath = TargetPath;
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
 
@@ -26,7 +51,7 @@ public static class FfmpegDownloader
         try
         {
             using (var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
-            using (var response = await http.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+            using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))
             {
                 response.EnsureSuccessStatusCode();
                 var total = response.Content.Headers.ContentLength ?? -1;

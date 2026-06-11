@@ -54,7 +54,16 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 - Forme d'onde sous la bande, scrub à la souris (glisser) et saut (clic) partout.
 - Undo/redo (50 niveaux), copier/coller à la tête de lecture.
 - Projets `.rsp` 100 % compatibles avec ceux de la version web.
-- FFmpeg : détection automatique (réutilise celui de l'ancienne app Tauri) ou téléchargement intégré.
+- FFmpeg : détection automatique (réutilise celui de l'ancienne app Tauri) ou téléchargement intégré
+  (gyan.dev, avec repli GitHub si la chaîne de certificats échoue).
+- **Export vidéo MP4 avec bande incrustée** (port d'export.rs, amélioré) :
+  - Layout 1920×1080 fixe (vidéo en haut, bande qui remplit le bas) — les présets 480p/720p/1080p
+    ne changent que le bitrate, personnalisable.
+  - Bande rendue **en tuiles paresseuses** avec le même style que l'écran (l'ancien strip PNG était
+    plafonné à 32 000 px → bande tronquée après quelques minutes ; corrigé).
+  - **Audio de la source inclus** (l'ancien export produisait des vidéos muettes) — désactivable.
+  - Letterbox auto (désactivable), encodeur GPU détecté (NVENC/AMF/QuickSync) ou CPU forcé,
+    plage d'export optionnelle, **annulation** en cours d'encodage, progression %/fps/ETA.
 
 ### Raccourcis
 
@@ -72,7 +81,6 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 ## Étapes suivantes (non incluses dans la V1)
 
 - Transcription Whisper (port de `diarization.rs` : lancer whisper.cpp en sous-processus).
-- Export vidéo avec incrustation de la bande (port de `export.rs`).
 - Vidéos proxy All-Intra pour les codecs exotiques (MKV/HEVC) que le décodeur Windows refuse.
 - Mixeur audio multi-pistes (NAudio ou MediaPlayer multiples).
 - Recherche/remplacement global et décalage de timeline (déjà portés dans `ProjectState`,
