@@ -23,8 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Whisper and models
-whisper/
+# Whisper binaries and models (dossier de binaires whisper.cpp à la racine
+# uniquement — le dossier source RhythmoSync.App/Whisper/ doit rester suivi)
+/whisper/
 *.zip
 
 # Temporary and build artifacts

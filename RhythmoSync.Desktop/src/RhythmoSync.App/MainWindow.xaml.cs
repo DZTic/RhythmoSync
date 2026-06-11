@@ -554,6 +554,35 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
+    // ── Transcription Whisper ────────────────────────────────────────────────
+
+    private async void OnWhisper(object sender, RoutedEventArgs e)
+    {
+        if (_state.VideoPath is null || !File.Exists(_state.VideoPath))
+        {
+            MessageBox.Show(this, "Importez d'abord une vidéo avant de lancer la transcription.",
+                "Transcription Whisper", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        // La transcription analyse l'ORIGINAL (pas le proxy) : il faut FFmpeg pour
+        // en extraire l'audio au format attendu par whisper-cli.
+        if (_ffmpegPath is null && !await TryDownloadFfmpegAsync("extraire l'audio pour la transcription"))
+        {
+            MessageBox.Show(this, "FFmpeg est indispensable pour extraire l'audio à transcrire.",
+                "Transcription Whisper", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (_isPlaying) TogglePlay();
+        var dialog = new Whisper.WhisperDialog(_state, _state.VideoPath, _ffmpegPath!)
+        {
+            Owner = this,
+        };
+        dialog.ShowDialog();
+        if (dialog.ImportedCount > 0)
+            StatusLeft.Text = $"{dialog.ImportedCount} segment(s) Whisper importé(s) dans la bande.";
+    }
+
     // ── Blocs ─────────────────────────────────────────────────────────────────
 
     private void OnAddBlock(object sender, RoutedEventArgs e)

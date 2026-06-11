@@ -19,7 +19,8 @@ RhythmoSync.Desktop/
     │   ├── WaveformGenerator.cs # PCM s16le streamé → pics min/max (jamais tout en RAM)
     │   ├── VideoProber.cs     #   Sonde conteneur/codec → ce format exige-t-il un proxy ?
     │   ├── ProxyGenerator.cs  #   Proxy All-Intra H.264 ≤ 1080p + cache durable
-    │   └── VideoExporter.cs   #   Export MP4 avec bande incrustée (+ ExportLayout.cs)
+    │   ├── VideoExporter.cs   #   Export MP4 avec bande incrustée (+ ExportLayout.cs)
+    │   └── WhisperService.cs  #   Transcription locale (whisper-cli.exe en sous-processus)
     └── RhythmoSync.App/       # Application WPF
         ├── MainWindow.*       #   Transport, horloge extrapolée, raccourcis, fichiers
         └── Controls/
@@ -97,7 +98,6 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 
 ## Étapes suivantes (non incluses dans la V1)
 
-- Transcription Whisper (port de `diarization.rs` : lancer whisper.cpp en sous-processus).
 - Mixeur audio multi-pistes (NAudio ou MediaPlayer multiples).
 - Recherche/remplacement global et décalage de timeline (déjà portés dans `ProjectState`,
   il ne manque que les boîtes de dialogue).
