@@ -6,7 +6,7 @@ namespace RhythmoSync.Core.Models;
 /// <summary>
 /// Représentation sur disque d'un projet (.rsp). Le format JSON camelCase est
 /// strictement compatible avec les fichiers produits par l'ancienne version web :
-/// { version, timestamp, dialogues, totalLanes, syncOffset, zoomLevel, fps, videoPath }.
+/// { version, timestamp, dialogues, totalLanes, syncOffset, zoomLevel, fps, videoPath, audioTracks }.
 /// </summary>
 public sealed class ProjectFile
 {
@@ -18,6 +18,9 @@ public sealed class ProjectFile
     public double ZoomLevel { get; set; } = RhythmoConstants.DefaultPps;
     public double Fps { get; set; } = 25;
     public string? VideoPath { get; set; }
+
+    /// <summary>Pistes du mixeur audio. Null dans les anciens fichiers → pistes par défaut.</summary>
+    public List<AudioTrack>? AudioTracks { get; set; }
 }
 
 public static class ProjectIo
