@@ -74,8 +74,14 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Vidéo -->
-            <Border Grid.Row="0" Background="Black">
+            <!-- Vidéo + mixeur audio -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="Black">
                 <Grid>
                     <MediaElement x:Name="Media"
                                   LoadedBehavior="Manual"
@@ -105,6 +111,15 @@
                 </Grid>
             </Border>
 
+            <!-- Mixeur audio multi-pistes (repliable) -->
+            <Border x:Name="MixerPanel" Grid.Column="1" Width="240"
+                    Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1,0,0,0"
+                    Visibility="Collapsed">
+                <controls:AudioMixerPanel x:Name="Mixer"/>
+            </Border>
+            </Grid>
+
             <!-- Transport -->
             <Border Grid.Row="1" Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1" Padding="10,6">
@@ -124,7 +139,10 @@
                                   SelectionChanged="OnRateChanged" FontSize="11"/>
                         <TextBlock Style="{StaticResource MutedText}" Text="Volume"/>
                         <Slider x:Name="VolumeSlider" Width="90" Minimum="0" Maximum="1" Value="0.9"
-                                VerticalAlignment="Center" Margin="6,0,0,0" ValueChanged="OnVolumeChanged"/>
+                                VerticalAlignment="Center" Margin="6,0,10,0" ValueChanged="OnVolumeChanged"/>
+                        <Button x:Name="MixerButton" Style="{StaticResource ToolButton}" Content="🎚 Mixeur"
+                                Click="OnToggleMixer"
+                                ToolTip="Afficher / masquer le mixeur audio multi-pistes"/>
                     </StackPanel>
                     <Border/>
                 </DockPanel>

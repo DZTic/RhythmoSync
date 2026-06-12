@@ -23,9 +23,12 @@ RhythmoSync.Desktop/
     │   └── WhisperService.cs  #   Transcription locale (whisper-cli.exe en sous-processus)
     └── RhythmoSync.App/       # Application WPF
         ├── MainWindow.*       #   Transport, horloge extrapolée, raccourcis, fichiers
+        ├── Audio/
+        │   └── AudioMixer.cs  #   Pistes externes : MediaPlayer asservis au transport
         └── Controls/
             ├── RhythmoBandControl.cs  # Bande rythmo native
-            └── WaveformControl.cs     # Forme d'onde en tuiles de 30 s
+            ├── WaveformControl.cs     # Forme d'onde en tuiles de 30 s
+            └── AudioMixerPanel.cs     # Panneau du mixeur (volume/mute/solo/fichier)
 ```
 
 ## Pourquoi c'est plus rapide que la version web/Tauri
@@ -82,6 +85,16 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
     bouton de purge avec taille dans la barre d'état.
   - Le `.rsp`, l'export, le letterbox et la waveform utilisent **toujours l'original** ;
     seule la lecture passe par le proxy.
+- **Mixeur audio multi-pistes** (port du mixeur de l'EditorSidebar web) :
+  - Trois pistes : Original (l'audio de la vidéo), Voix et Bruitages, chacune avec
+    volume, Mute et Solo (un solo coupe les autres pistes, comme dans la version web).
+  - Chargement d'un fichier audio (WAV/MP3/M4A…) dans les pistes Voix/Bruitages :
+    un `MediaPlayer` WPF par piste, asservi au transport vidéo (play/pause/seek/vitesse)
+    avec recalage automatique de la dérive (seuil 150 ms, contrôle 2×/s).
+  - Panneau repliable à droite de la vidéo (bouton « 🎚 Mixeur » du transport).
+  - Pistes sauvegardées dans le `.rsp` (champ `audioTracks`, compatible web) ; un chemin
+    introuvable (ex. URL blob d'un vieux projet web) restaure les réglages sans lecture.
+- Ouverture par ligne de commande : `RhythmoSyncStudio.exe fichier.rsp` (ou une vidéo).
 
 ### Raccourcis
 
@@ -98,6 +111,5 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 
 ## Étapes suivantes (non incluses dans la V1)
 
-- Mixeur audio multi-pistes (NAudio ou MediaPlayer multiples).
 - Recherche/remplacement global et décalage de timeline (déjà portés dans `ProjectState`,
   il ne manque que les boîtes de dialogue).

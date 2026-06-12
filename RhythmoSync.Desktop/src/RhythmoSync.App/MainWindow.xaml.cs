@@ -28,6 +28,11 @@ public partial class MainWindow : Window
     private double _playbackRate = 1.0;
     private bool _mediaReady;
 
+    // ── Mixeur audio multi-pistes ─────────────────────────────────────────────
+    // La piste « Original » module le volume de MediaElement ; les pistes
+    // externes (Voix, Bruitages…) sont des MediaPlayer asservis au transport.
+    private Audio.AudioMixer? _mixer;
+
     private string? _ffmpegPath;
     private string? _currentProjectPath;
     private CancellationTokenSource? _waveformCts;
@@ -72,15 +77,35 @@ public partial class MainWindow : Window
             RateCombo.Items.Add("×" + rate.ToString(CultureInfo.InvariantCulture));
         RateCombo.SelectedIndex = 2;
 
-        Media.Volume = VolumeSlider.Value;
+        _mixer = new Audio.AudioMixer(_state, GetClockTime);
+        _mixer.TrackFailed += (name, message) =>
+            StatusLeft.Text = $"Piste « {name} » : lecture impossible ({message}).";
+        Mixer.Initialize(_state);
+        _state.AudioTracksChanged += ApplyAudioVolumes;
+        ApplyAudioVolumes();
 
         _ffmpegPath = FfmpegLocator.Find();
         UpdateStatusBar();
         UpdateProxyCacheButton();
 
+        // Fichier passé en ligne de commande : projet .rsp/.json ou vidéo
+        if (App.StartupFile is { } startupFile)
+        {
+            Loaded += (_, _) =>
+            {
+                var ext = Path.GetExtension(startupFile).ToLowerInvariant();
+                if (ext is ".rsp" or ".json") OpenProjectFromPath(startupFile);
+                else LoadVideo(startupFile);
+            };
+        }
+
         PreviewKeyDown += OnWindowKeyDown;
         CompositionTarget.Rendering += OnRendering;
-        Closed += (_, _) => CompositionTarget.Rendering -= OnRendering;
+        Closed += (_, _) =>
+        {
+            CompositionTarget.Rendering -= OnRendering;
+            _mixer?.Dispose();
+        };
     }
 
     // ── Boucle de rendu (équivalent du requestAnimationFrame web) ────────────
@@ -94,6 +119,10 @@ public partial class MainWindow : Window
         // Le timecode n'a pas besoin de 60 Hz : mise à jour 1 frame sur 4.
         if (++_frameCount % 4 == 0)
             TimecodeText.Text = FormatTimecode(time);
+
+        // Recalage des pistes externes du mixeur (2 fois/seconde suffit).
+        if (_isPlaying && _frameCount % 32 == 0)
+            _mixer?.UpdateDrift();
     }
 
     private double GetClockTime()
@@ -130,6 +159,7 @@ public partial class MainWindow : Window
         time = Math.Clamp(time, 0, _duration);
         Media.Position = TimeSpan.FromSeconds(time);
         _lastMediaPos = -1; // ré-ancrage de l'extrapolation à la prochaine frame
+        _mixer?.Seek(time);
     }
 
     private void TogglePlay()
@@ -138,12 +168,14 @@ public partial class MainWindow : Window
         if (_isPlaying)
         {
             Media.Pause();
+            _mixer?.Pause();
             _isPlaying = false;
         }
         else
         {
             if (_duration > 0 && GetClockTime() >= _duration - 0.05) SeekTo(0);
             Media.Play();
+            _mixer?.Play();
             _isPlaying = true;
         }
         Band.IsPlaying = _isPlaying;
@@ -172,6 +204,7 @@ public partial class MainWindow : Window
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
         Media.Pause();
+        _mixer?.Pause();
     }
 
     private async void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
@@ -299,6 +332,7 @@ public partial class MainWindow : Window
         _proxyCts?.Cancel();
         Media.Stop();
         Media.Source = null;
+        _mixer?.Pause();
         _mediaReady = false;
         _isPlaying = false;
         _duration = 0;
@@ -322,12 +356,16 @@ public partial class MainWindow : Window
             Filter = "Projet RhythmoSync (*.rsp;*.json)|*.rsp;*.json|Tous les fichiers (*.*)|*.*",
         };
         if (dialog.ShowDialog(this) != true) return;
+        OpenProjectFromPath(dialog.FileName);
+    }
 
+    private void OpenProjectFromPath(string fileName)
+    {
         try
         {
-            var project = ProjectIo.Load(dialog.FileName);
+            var project = ProjectIo.Load(fileName);
             _state.ImportProject(project);
-            _currentProjectPath = dialog.FileName;
+            _currentProjectPath = fileName;
 
             if (project.VideoPath is { } videoPath && File.Exists(videoPath))
             {
@@ -667,12 +705,32 @@ public partial class MainWindow : Window
         {
             _playbackRate = rate;
             Media.SpeedRatio = rate;
+            _mixer?.SetRate(rate);
         }
     }
 
     private void OnVolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (Media is not null) Media.Volume = e.NewValue;
+        if (Media is not null) ApplyAudioVolumes();
+    }
+
+    /// <summary>
+    /// Applique le volume maître (curseur du transport) combiné aux gains du
+    /// mixeur : la piste « Original » module MediaElement, les autres leurs players.
+    /// </summary>
+    private void ApplyAudioVolumes()
+    {
+        var original = _state.AudioTracks.FirstOrDefault(t => t.IsOriginal);
+        var originalGain = original is null ? 1.0 : _state.EffectiveTrackVolume(original);
+        Media.Volume = VolumeSlider.Value * originalGain;
+        if (_mixer is not null) _mixer.MasterVolume = VolumeSlider.Value;
+    }
+
+    private void OnToggleMixer(object sender, RoutedEventArgs e)
+    {
+        var show = MixerPanel.Visibility != Visibility.Visible;
+        MixerPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        MixerButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
     }
 
     // ── Raccourcis clavier ───────────────────────────────────────────────────

@@ -25,6 +25,34 @@ public sealed class ProjectState
     public event Action? SelectionChanged;
     /// <summary>Déclenché quand un paramètre de vue change (zoom, pistes, snap…).</summary>
     public event Action? ViewChanged;
+    /// <summary>Déclenché quand une piste du mixeur audio change (volume, mute, solo, fichier…).</summary>
+    public event Action? AudioTracksChanged;
+
+    // ── Mixeur audio ─────────────────────────────────────────────────────────
+
+    private List<AudioTrack> _audioTracks = DefaultAudioTracks();
+    public IReadOnlyList<AudioTrack> AudioTracks => _audioTracks;
+
+    /// <summary>Les trois pistes historiques de la version web : Original, Voix, Bruitages.</summary>
+    public static List<AudioTrack> DefaultAudioTracks() =>
+    [
+        new() { Id = "original", Name = "Original", IsOriginal = true },
+        new() { Id = "voix", Name = "Voix" },
+        new() { Id = "bruitages", Name = "Bruitages" },
+    ];
+
+    public void UpdateAudioTrack(string id, Func<AudioTrack, AudioTrack> update)
+    {
+        _audioTracks = _audioTracks.Select(t => t.Id == id ? update(t) : t).ToList();
+        AudioTracksChanged?.Invoke();
+    }
+
+    /// <summary>Gain effectif d'une piste, mute et solo résolus (0 si muette ou écrasée par un solo).</summary>
+    public double EffectiveTrackVolume(AudioTrack track)
+    {
+        var anySolo = _audioTracks.Any(t => t.Solo);
+        return track.Muted || (anySolo && !track.Solo) ? 0 : track.Volume;
+    }
 
     // ── Paramètres de vue / réglages ─────────────────────────────────────────
 
@@ -239,6 +267,7 @@ public sealed class ProjectState
         ZoomLevel = _zoomLevel,
         Fps = Fps,
         VideoPath = VideoPath,
+        AudioTracks = [.. _audioTracks],
     };
 
     public void ImportProject(ProjectFile file)
@@ -249,12 +278,16 @@ public sealed class ProjectState
         _zoomLevel = file.ZoomLevel > 0 ? Math.Clamp(file.ZoomLevel, 20, 1200) : RhythmoConstants.DefaultPps;
         Fps = file.Fps > 0 ? file.Fps : 25;
         VideoPath = file.VideoPath;
+        _audioTracks = file.AudioTracks is { Count: > 0 } tracks
+            ? tracks.Select(t => t with { Volume = Math.Clamp(t.Volume, 0, 1) }).ToList()
+            : DefaultAudioTracks();
         _past.Clear();
         _future.Clear();
         _selected.Clear();
         DialoguesChanged?.Invoke();
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();
+        AudioTracksChanged?.Invoke();
     }
 
     public void ResetProject()
@@ -264,11 +297,13 @@ public sealed class ProjectState
         _syncOffset = 0;
         Fps = 25;
         VideoPath = null;
+        _audioTracks = DefaultAudioTracks();
         _past.Clear();
         _future.Clear();
         _selected.Clear();
         DialoguesChanged?.Invoke();
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();
+        AudioTracksChanged?.Invoke();
     }
 }
