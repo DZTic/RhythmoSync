@@ -69,6 +69,9 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
   - Bande rendue **en tuiles paresseuses** avec le même style que l'écran (l'ancien strip PNG était
     plafonné à 32 000 px → bande tronquée après quelques minutes ; corrigé).
   - **Audio de la source inclus** (l'ancien export produisait des vidéos muettes) — désactivable.
+  - **Les pistes du mixeur sont mixées à l'export** : Voix/Bruitages chargées sont
+    combinées à l'audio source (`filter_complex` volume + `amix`) en respectant les
+    volumes, Mute et Solo du mixeur ; une source sans audio est détectée et exclue.
   - Letterbox auto (désactivable), encodeur GPU détecté (NVENC/AMF/QuickSync) ou CPU forcé,
     plage d'export optionnelle, **annulation** en cours d'encodage, progression %/fps/ETA.
 - **Proxy All-Intra pour les formats illisibles** (MKV, WebM, HEVC, AV1… — port de

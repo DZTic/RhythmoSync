@@ -28,6 +28,9 @@ public interface IBandStripSource
     byte[] GetTile(int tileIndex);
 }
 
+/// <summary>Piste externe du mixeur à inclure dans l'export : fichier + gain effectif (0–1).</summary>
+public sealed record ExternalAudioTrack(string Path, double Gain);
+
 public sealed record ExportSettings
 {
     public required string FfmpegPath { get; init; }
@@ -49,6 +52,17 @@ public sealed record ExportSettings
     public required double EndTime { get; init; }
     public int SyncLineX { get; init; }
     public bool IncludeAudio { get; init; } = true;
+
+    /// <summary>
+    /// Gain effectif (0–1) de la piste « Original » du mixeur, appliqué à l'audio
+    /// de la vidéo source. 1 = comportement historique ; 0 = source muette
+    /// (piste mutée ou écrasée par un solo).
+    /// </summary>
+    public double OriginalAudioGain { get; init; } = 1.0;
+
+    /// <summary>Pistes externes du mixeur (Voix, Bruitages…) à mixer avec l'audio source.</summary>
+    public IReadOnlyList<ExternalAudioTrack> ExternalAudioTracks { get; init; } = [];
+
     public bool ForceCpuEncoder { get; init; }
     public string Title { get; init; } = "";
     public string Comment { get; init; } = "";
@@ -223,14 +237,70 @@ public static class VideoExporter
             "-s", $"{s.ExportWidth}x{s.ExportHeight}",
             "-r", s.Fps.ToString("0.######", inv),
             "-i", "pipe:0");
+        // --- Audio : mixage des pistes du mixeur (Original + Voix/Bruitages…) ---
+        // Sans piste externe chargée : chemin historique (audio source seul, map
+        // optionnel — robuste aux vidéos muettes sans sonde préalable). Avec
+        // pistes externes : filter_complex volume par piste + amix, en sondant
+        // d'abord la présence d'audio dans la source (un [1:a:0] manquant ferait
+        // échouer tout l'encodage).
+        var audioMapped = false;
         if (s.IncludeAudio)
         {
-            AddArgs(encoderPsi,
+            var originalGain = Math.Clamp(s.OriginalAudioGain, 0, 1);
+            var externals = s.ExternalAudioTracks
+                .Where(t => t.Gain > 0 && File.Exists(t.Path))
+                .Select(t => t with { Gain = Math.Clamp(t.Gain, 0, 1) })
+                .ToList();
+
+            void AddTimedInput(string path) => AddArgs(encoderPsi,
                 "-ss", s.StartTime.ToString("0.######", inv),
                 "-t", rangeDuration.ToString("0.######", inv),
-                "-i", s.VideoPath,
-                "-map", "0:v", "-map", "1:a:0?",
-                "-c:a", "aac", "-b:a", "192k");
+                "-i", path);
+
+            if (externals.Count == 0)
+            {
+                if (originalGain > 0)
+                {
+                    AddTimedInput(s.VideoPath);
+                    AddArgs(encoderPsi,
+                        "-map", "0:v", "-map", "1:a:0?",
+                        "-c:a", "aac", "-b:a", "192k");
+                    if (originalGain < 1)
+                        AddArgs(encoderPsi, "-af", string.Format(inv, "volume={0:0.####}", originalGain));
+                    audioMapped = true;
+                }
+                // originalGain == 0 et rien d'autre à mixer → export muet, voulu
+            }
+            else
+            {
+                var audioInputs = new List<(string Path, double Gain)>();
+                if (originalGain > 0 && await HasAudioStreamAsync(s.FfmpegPath, s.VideoPath, ct))
+                    audioInputs.Add((s.VideoPath, originalGain));
+                audioInputs.AddRange(externals.Select(t => (t.Path, t.Gain)));
+
+                if (audioInputs.Count > 0)
+                {
+                    var chains = new List<string>();
+                    for (var i = 0; i < audioInputs.Count; i++)
+                    {
+                        AddTimedInput(audioInputs[i].Path);
+                        // L'entrée 0 est la vidéo brute sur stdin → audio à partir de 1
+                        chains.Add(string.Format(inv, "[{0}:a:0]volume={1:0.####}[a{2}]",
+                            i + 1, audioInputs[i].Gain, i));
+                    }
+                    // normalize=0 : amix ne doit pas re-pondérer, les gains du mixeur font foi
+                    var filter = audioInputs.Count == 1
+                        ? string.Format(inv, "[1:a:0]volume={0:0.####}[aout]", audioInputs[0].Gain)
+                        : string.Join(";", chains) + ";"
+                          + string.Concat(Enumerable.Range(0, audioInputs.Count).Select(i => $"[a{i}]"))
+                          + string.Format(inv, "amix=inputs={0}:duration=longest:normalize=0[aout]", audioInputs.Count);
+                    AddArgs(encoderPsi,
+                        "-filter_complex", filter,
+                        "-map", "0:v", "-map", "[aout]",
+                        "-c:a", "aac", "-b:a", "192k");
+                    audioMapped = true;
+                }
+            }
         }
         AddArgs(encoderPsi, "-c:v", encoder.Encoder);
         switch (encoder.Encoder)
@@ -256,7 +326,7 @@ public static class VideoExporter
             "-metadata", $"comment={s.Comment}",
             "-metadata", $"description={s.Description}",
             "-metadata", "encoder=RhythmoSync Studio");
-        if (s.IncludeAudio) AddArgs(encoderPsi, "-shortest");
+        if (audioMapped) AddArgs(encoderPsi, "-shortest");
         AddArgs(encoderPsi, "-y", s.OutputPath);
         encoderPsi.RedirectStandardInput = true;
         encoderPsi.RedirectStandardError = true;
@@ -431,6 +501,27 @@ public static class VideoExporter
                 outFrame[idx + 2] = 0xEF; // R
                 outFrame[idx + 3] = 0xFF; // A
             }
+        }
+    }
+
+    /// <summary>La source contient-elle au moins un flux audio ? (même sonde stderr que VideoProber)</summary>
+    private static async Task<bool> HasAudioStreamAsync(string ffmpegPath, string videoPath, CancellationToken ct)
+    {
+        var psi = RawProcess(ffmpegPath);
+        AddArgs(psi, "-hide_banner", "-i", videoPath, "-t", "0.05", "-f", "null", "-");
+        psi.RedirectStandardError = true;
+        psi.RedirectStandardOutput = true;
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null) return false;
+            var stderr = await process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+            return stderr.Contains("Audio:");
+        }
+        catch
+        {
+            return false;
         }
     }
 

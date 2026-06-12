@@ -50,7 +50,21 @@ public partial class ExportDialog : Window
         EncoderCombo.SelectedIndex = 0;
 
         RangeEndBox.Text = duration.ToString("0.##", CultureInfo.InvariantCulture);
+
+        // La case audio reflète ce qui sera réellement encodé : avec des pistes
+        // externes chargées dans le mixeur, l'export les mixe à l'audio source.
+        var externalCount = CollectExternalTracks().Count;
+        if (externalCount > 0)
+            AudioCheck.Content = $"Inclure l'audio (mixage : Original + {externalCount} piste(s) du mixeur)";
     }
+
+    /// <summary>Pistes externes du mixeur exportables : fichier présent et gain effectif > 0.</summary>
+    private List<ExternalAudioTrack> CollectExternalTracks() =>
+        _state.AudioTracks
+            .Where(t => !t.IsOriginal && t.Url is { Length: > 0 } url && File.Exists(url))
+            .Select(t => new ExternalAudioTrack(t.Url!, _state.EffectiveTrackVolume(t)))
+            .Where(t => t.Gain > 0)
+            .ToList();
 
     // ── Options ────────────────────────────────────────────────────────────────
 
@@ -176,6 +190,9 @@ public partial class ExportDialog : Window
                 EndTime = rangeEnd,
                 SyncLineX = layout.SyncLineX,
                 IncludeAudio = includeAudio,
+                OriginalAudioGain = _state.AudioTracks.FirstOrDefault(t => t.IsOriginal) is { } original
+                    ? _state.EffectiveTrackVolume(original) : 1.0,
+                ExternalAudioTracks = CollectExternalTracks(),
                 ForceCpuEncoder = forceCpu,
                 Title = $"{videoName} — RhythmoSync Master",
                 Comment = $"Bande rythmo : {actualLanes} piste(s), {dialogues.Count} bloc(s) — {resolutionLabel} @ {_state.Fps}fps",
