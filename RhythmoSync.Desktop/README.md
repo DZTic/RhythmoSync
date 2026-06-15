@@ -98,6 +98,12 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
   - Pistes sauvegardées dans le `.rsp` (champ `audioTracks`, compatible web) ; un chemin
     introuvable (ex. URL blob d'un vieux projet web) restaure les réglages sans lecture.
 - Ouverture par ligne de commande : `RhythmoSyncStudio.exe fichier.rsp` (ou une vidéo).
+- **Outils d'édition globale** (port des modales web) :
+  - **Décaler la timeline** (bouton « ↔ Décaler ») : décale tous les blocs d'un nombre
+    de secondes (positif ou négatif, début borné à 0 s).
+  - **Rechercher & remplacer** (bouton « 🔍 Remplacer », `Ctrl+H`) : remplacement global
+    insensible à la casse dans le texte et le nom de personnage, avec le nombre de
+    remplacements rapporté dans la barre d'état (la version web ne donnait aucun retour).
 
 ### Raccourcis
 
@@ -109,10 +115,12 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 | `← / →` | ± 1 image (`Shift` : ± 1 s, `Ctrl` : décale les blocs sélectionnés) |
 | `Ctrl+C` / `Ctrl+V` | Copier / coller à la tête de lecture |
 | `Ctrl+G` / `Ctrl+Shift+G` | Grouper / dégrouper |
+| `Ctrl+H` | Rechercher & remplacer |
 | `Ctrl+S` / `Ctrl+O` / `Ctrl+I` | Enregistrer / ouvrir / importer une vidéo |
 | `Ctrl+ + / −` | Zoom |
 
 ## Étapes suivantes (non incluses dans la V1)
 
-- Recherche/remplacement global et décalage de timeline (déjà portés dans `ProjectState`,
-  il ne manque que les boîtes de dialogue).
+Le cœur fonctionnel de la version web est désormais entièrement porté. Pistes
+d'évolution restantes : enregistrement vocal intégré (microphone), VU-mètre,
+verrouillage de blocs.
