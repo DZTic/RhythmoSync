@@ -12,7 +12,8 @@ RhythmoSync.Desktop/
     ├── RhythmoSync.Core/      # Modèle de données, état + undo/redo, snap, format .rsp
     │   ├── Models/            #   DialogueBlock (record immuable), ProjectFile (JSON .rsp)
     │   ├── ProjectState.cs    #   Portage du store Zustand (historique 50 niveaux)
-    │   └── SnapEngine.cs      #   Magnétisme (ligne de synchro + bords de blocs)
+    │   ├── SnapEngine.cs      #   Magnétisme (ligne de synchro + bords de blocs)
+    │   └── SubtitleIo.cs      #   Import/export SRT, VTT, TXT, CSV (logique pure)
     ├── RhythmoSync.Media/     # Intégration FFmpeg (aucune dépendance UI)
     │   ├── FfmpegLocator.cs   #   Localisation (exe, ancienne app Tauri, PATH)
     │   ├── FfmpegDownloader.cs#   Téléchargement auto (gyan.dev essentials)
@@ -104,6 +105,11 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
   **couleur** (8 préréglages + champ hexadécimal), la **piste** et la **durée**
   (avec réinitialisation), affiche l'alerte « trop rapide » et le timecode, et permet
   de supprimer le bloc. Repliable via le bouton « ✏ Édition ».
+- **Import / export texte** (port des fonctions web et de `import_subtitles`) :
+  - Export des dialogues en **SubRip (.srt)**, **WebVTT (.vtt)**, **transcript (.txt)**
+    ou **tableur (.csv)** — un seul bouton « 📄 Texte… », le format suit l'extension choisie.
+  - Import de sous-titres **.srt / .vtt** comme blocs (bouton « 📥 Sous-titres… ») ;
+    remplace les blocs existants (avec confirmation) et ajuste le nombre de pistes.
 - **Outils d'édition globale** (port des modales web) :
   - **Décaler la timeline** (bouton « ↔ Décaler ») : décale tous les blocs d'un nombre
     de secondes (positif ou négatif, début borné à 0 s).
@@ -129,8 +135,6 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 
 Fonctions de la version web restant à porter :
 
-- Exports texte : SubRip `.srt`, WebVTT `.vtt`, transcript `.txt`, tableur `.csv`,
-  et import de sous-titres `.srt`.
 - Fenêtre Statistiques, panneau d'historique visuel, réglages (durée par défaut,
   sync offset), « Tout supprimer », « Réinitialiser la vue ».
 
