@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -654,6 +655,81 @@ public partial class MainWindow : Window
         StatusLeft.Text = count > 0
             ? $"{count} remplacement(s) effectué(s)."
             : $"« {dialog.Find} » introuvable.";
+    }
+
+    // ── Import / export texte (SRT, VTT, TXT, CSV) ───────────────────────────
+
+    private void OnExportText(object sender, RoutedEventArgs e)
+    {
+        if (_state.Dialogues.Count == 0)
+        {
+            MessageBox.Show(this, "Aucun bloc à exporter.",
+                "Export texte", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Sous-titres SubRip (*.srt)|*.srt|Sous-titres WebVTT (*.vtt)|*.vtt|"
+                   + "Transcript (*.txt)|*.txt|Tableur CSV (*.csv)|*.csv",
+            FileName = "dialogues.srt",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        // Le format suit l'extension choisie ; le filtre sélectionné sert de repli.
+        var format = SubtitleIo.FormatFromExtension(dialog.FileName)
+                     ?? (SubtitleIo.TextFormat)(dialog.FilterIndex - 1);
+        try
+        {
+            File.WriteAllText(dialog.FileName, SubtitleIo.Export(_state.Dialogues, format), new UTF8Encoding(false));
+            StatusLeft.Text = $"Export {format.ToString().ToUpperInvariant()} : {Path.GetFileName(dialog.FileName)}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Erreur lors de l'export : " + ex.Message,
+                "Export texte", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnImportSubtitles(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "Sous-titres (*.srt;*.vtt)|*.srt;*.vtt|Tous les fichiers (*.*)|*.*",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        List<DialogueBlock> imported;
+        try
+        {
+            imported = SubtitleIo.Parse(File.ReadAllText(dialog.FileName), dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Erreur d'importation : " + ex.Message,
+                "Import sous-titres", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        if (imported.Count == 0)
+        {
+            MessageBox.Show(this, "Fichier vide ou aucun sous-titre trouvé.",
+                "Import sous-titres", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // L'import remplace les blocs existants (comme la version web) — on confirme
+        // d'abord s'il y a des données à écraser.
+        if (_state.Dialogues.Count > 0 &&
+            MessageBox.Show(this,
+                $"Remplacer les {_state.Dialogues.Count} bloc(s) existant(s) par les {imported.Count} sous-titres importés ?",
+                "Import sous-titres", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        _state.SetDialogues(imported);
+        var maxLane = imported.Max(d => d.Lane);
+        _state.TotalLanes = Math.Max(maxLane + 1, 3);
+        _state.SelectBlock(null);
+        StatusLeft.Text = $"{imported.Count} sous-titre(s) importé(s).";
     }
 
     // ── Blocs ─────────────────────────────────────────────────────────────────
