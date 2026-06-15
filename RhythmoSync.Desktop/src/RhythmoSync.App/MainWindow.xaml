@@ -30,6 +30,11 @@
                             ToolTip="Exporter la vidéo avec la bande rythmo incrustée (MP4)"/>
                     <Button x:Name="WhisperButton" Style="{StaticResource ToolButton}" Content="🪄 Whisper" Click="OnWhisper"
                             ToolTip="Transcrire l'audio en blocs de dialogue (whisper.cpp, 100 % local)"/>
+                    <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
+                    <Button x:Name="ShiftButton" Style="{StaticResource ToolButton}" Content="↔ Décaler" Click="OnShiftTimeline"
+                            ToolTip="Décaler tous les blocs dans le temps"/>
+                    <Button x:Name="FindReplaceButton" Style="{StaticResource ToolButton}" Content="🔍 Remplacer" Click="OnFindReplace"
+                            ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">

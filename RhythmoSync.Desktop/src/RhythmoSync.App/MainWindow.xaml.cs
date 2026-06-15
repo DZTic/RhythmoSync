@@ -621,6 +621,38 @@ public partial class MainWindow : Window
             StatusLeft.Text = $"{dialog.ImportedCount} segment(s) Whisper importé(s) dans la bande.";
     }
 
+    // ── Outils (décalage timeline, rechercher/remplacer) ─────────────────────
+
+    private void OnShiftTimeline(object sender, RoutedEventArgs e)
+    {
+        if (_state.Dialogues.Count == 0)
+        {
+            MessageBox.Show(this, "Aucun bloc à décaler.",
+                "Décaler la timeline", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dialog = new Tools.ShiftTimelineDialog { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Offset == 0) return;
+        _state.ShiftTimeline(dialog.Offset);
+        StatusLeft.Text = $"Timeline décalée de {dialog.Offset:+0.###;-0.###} s.";
+    }
+
+    private void OnFindReplace(object sender, RoutedEventArgs e)
+    {
+        if (_state.Dialogues.Count == 0)
+        {
+            MessageBox.Show(this, "Aucun bloc dans lequel rechercher.",
+                "Rechercher et remplacer", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dialog = new Tools.FindReplaceDialog { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        var count = _state.GlobalFindReplace(dialog.Find, dialog.Replace);
+        StatusLeft.Text = count > 0
+            ? $"{count} remplacement(s) effectué(s)."
+            : $"« {dialog.Find} » introuvable.";
+    }
+
     // ── Blocs ─────────────────────────────────────────────────────────────────
 
     private void OnAddBlock(object sender, RoutedEventArgs e)
@@ -790,6 +822,11 @@ public partial class MainWindow : Window
 
             case Key.G when ctrl:
                 _state.GroupSelected();
+                e.Handled = true;
+                break;
+
+            case Key.H when ctrl:
+                OnFindReplace(this, new RoutedEventArgs());
                 e.Handled = true;
                 break;
 

@@ -244,18 +244,43 @@ public sealed class ProjectState
     public void ShiftTimeline(double offsetSeconds) =>
         Commit(_dialogues.Select(d => d with { StartTime = Math.Max(0, d.StartTime + offsetSeconds) }).ToList(), snapshot: true);
 
-    public void GlobalFindReplace(string find, string replace)
+    /// <summary>
+    /// Remplace <paramref name="find"/> par <paramref name="replace"/> (insensible à la
+    /// casse) dans le texte et le nom de personnage de tous les blocs. Ne touche
+    /// l'historique que s'il y a au moins une occurrence.
+    /// </summary>
+    /// <returns>Nombre d'occurrences remplacées.</returns>
+    public int GlobalFindReplace(string find, string replace)
     {
-        if (string.IsNullOrEmpty(find)) return;
-        Commit(_dialogues.Select(d => d with
+        if (string.IsNullOrEmpty(find)) return 0;
+        var count = 0;
+        var newList = _dialogues.Select(d =>
         {
-            Text = ReplaceIgnoreCase(d.Text, find, replace),
-            CharacterName = ReplaceIgnoreCase(d.CharacterName, find, replace),
-        }).ToList(), snapshot: true);
+            count += CountOccurrences(d.Text, find) + CountOccurrences(d.CharacterName, find);
+            return d with
+            {
+                Text = ReplaceIgnoreCase(d.Text, find, replace),
+                CharacterName = ReplaceIgnoreCase(d.CharacterName, find, replace),
+            };
+        }).ToList();
+        if (count > 0) Commit(newList, snapshot: true);
+        return count;
     }
 
     private static string ReplaceIgnoreCase(string source, string find, string replace) =>
         source.Replace(find, replace, StringComparison.OrdinalIgnoreCase);
+
+    private static int CountOccurrences(string source, string find)
+    {
+        if (string.IsNullOrEmpty(source)) return 0;
+        int count = 0, index = 0;
+        while ((index = source.IndexOf(find, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            index += find.Length;
+        }
+        return count;
+    }
 
     // ── Import / export / reset ──────────────────────────────────────────────
 
