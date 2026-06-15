@@ -100,6 +100,15 @@ public sealed class ProjectState
     public bool CanUndo => _past.Count > 0;
     public bool CanRedo => _future.Count > 0;
 
+    /// <summary>Nombre d'états annulables (taille de la pile « passé »).</summary>
+    public int PastDepth => _past.Count;
+    /// <summary>Nombre d'états rétablissables (taille de la pile « futur »).</summary>
+    public int FutureDepth => _future.Count;
+    /// <summary>Nombre de blocs de chaque état passé (du plus ancien au plus récent), pour le panneau d'historique.</summary>
+    public IReadOnlyList<int> PastBlockCounts => _past.ConvertAll(p => p.Count);
+    /// <summary>Nombre de blocs de chaque état futur (rétablissable), pour le panneau d'historique.</summary>
+    public IReadOnlyList<int> FutureBlockCounts => _future.ConvertAll(f => f.Count);
+
     // ── Historique ───────────────────────────────────────────────────────────
 
     /// <summary>Pousse l'état courant dans l'historique (appelé AVANT une mutation interactive, ex. début de drag).</summary>

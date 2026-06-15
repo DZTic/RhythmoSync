@@ -41,6 +41,10 @@
                             ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
                     <Button x:Name="BlockEditorButton" Style="{StaticResource ToolButton}" Content="✏ Édition" Click="OnToggleBlockEditor"
                             ToolTip="Afficher / masquer le panneau d'édition du bloc sélectionné"/>
+                    <Button x:Name="HistoryButton" Style="{StaticResource ToolButton}" Content="🕘 Historique" Click="OnToggleHistory"
+                            ToolTip="Afficher / masquer le panneau d'historique (annuler / rétablir)"/>
+                    <Button x:Name="SettingsButton" Style="{StaticResource ToolButton}" Content="⚙ Réglages" Click="OnSettings"
+                            ToolTip="Réglages (durée par défaut, synchro), statistiques, réinitialiser la vue, tout effacer"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -74,6 +78,14 @@
                 <TextBlock x:Name="StatusRight" Style="{StaticResource MutedText}" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                 <Border/>
             </DockPanel>
+        </Border>
+
+        <!-- ── Panneau d'historique (port du HistoryPanel web) ──────────────── -->
+        <Border x:Name="HistoryBorder" DockPanel.Dock="Right" Width="260"
+                Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1,0,0,0"
+                Visibility="Collapsed">
+            <controls:HistoryPanel x:Name="History"/>
         </Border>
 
         <!-- ── Panneau d'édition du bloc (port de l'EditorSidebar web) ──────── -->
