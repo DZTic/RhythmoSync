@@ -84,6 +84,9 @@ public partial class MainWindow : Window
         _state.AudioTracksChanged += ApplyAudioVolumes;
         ApplyAudioVolumes();
 
+        BlockEditor.Initialize(_state);
+        BlockEditorButton.Background = (Brush)FindResource("Accent"); // panneau visible par défaut
+
         _ffmpegPath = FfmpegLocator.Find();
         UpdateStatusBar();
         UpdateProxyCacheButton();
@@ -763,6 +766,13 @@ public partial class MainWindow : Window
         var show = MixerPanel.Visibility != Visibility.Visible;
         MixerPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         MixerButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
+    }
+
+    private void OnToggleBlockEditor(object sender, RoutedEventArgs e)
+    {
+        var show = BlockEditorBorder.Visibility != Visibility.Visible;
+        BlockEditorBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        BlockEditorButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
     }
 
     // ── Raccourcis clavier ───────────────────────────────────────────────────

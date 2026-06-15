@@ -35,6 +35,8 @@
                             ToolTip="Décaler tous les blocs dans le temps"/>
                     <Button x:Name="FindReplaceButton" Style="{StaticResource ToolButton}" Content="🔍 Remplacer" Click="OnFindReplace"
                             ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
+                    <Button x:Name="BlockEditorButton" Style="{StaticResource ToolButton}" Content="✏ Édition" Click="OnToggleBlockEditor"
+                            ToolTip="Afficher / masquer le panneau d'édition du bloc sélectionné"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -68,6 +70,13 @@
                 <TextBlock x:Name="StatusRight" Style="{StaticResource MutedText}" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                 <Border/>
             </DockPanel>
+        </Border>
+
+        <!-- ── Panneau d'édition du bloc (port de l'EditorSidebar web) ──────── -->
+        <Border x:Name="BlockEditorBorder" DockPanel.Dock="Right" Width="300"
+                Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1,0,0,0">
+            <controls:BlockEditorPanel x:Name="BlockEditor"/>
         </Border>
 
         <!-- ── Zone centrale ──────────────────────────────────────────────── -->
