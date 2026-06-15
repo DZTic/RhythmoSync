@@ -87,6 +87,7 @@ public partial class MainWindow : Window
 
         BlockEditor.Initialize(_state);
         BlockEditorButton.Background = (Brush)FindResource("Accent"); // panneau visible par défaut
+        History.Initialize(_state);
 
         _ffmpegPath = FfmpegLocator.Find();
         UpdateStatusBar();
@@ -849,6 +850,26 @@ public partial class MainWindow : Window
         var show = BlockEditorBorder.Visibility != Visibility.Visible;
         BlockEditorBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         BlockEditorButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
+    }
+
+    private void OnToggleHistory(object sender, RoutedEventArgs e)
+    {
+        var show = HistoryBorder.Visibility != Visibility.Visible;
+        HistoryBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        HistoryButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
+    }
+
+    private void OnSettings(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Tools.SettingsDialog(_state) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.ResetViewRequested)
+        {
+            _state.ZoomLevel = RhythmoConstants.DefaultPps;
+            _state.LaneHeightPx = RhythmoConstants.LaneHeight;
+            SeekTo(0);
+            StatusLeft.Text = "Vue réinitialisée.";
+        }
     }
 
     // ── Raccourcis clavier ───────────────────────────────────────────────────

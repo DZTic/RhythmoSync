@@ -30,7 +30,8 @@ RhythmoSync.Desktop/
             ├── RhythmoBandControl.cs  # Bande rythmo native
             ├── WaveformControl.cs     # Forme d'onde en tuiles de 30 s
             ├── AudioMixerPanel.cs     # Panneau du mixeur (volume/mute/solo/fichier)
-            └── BlockEditorPanel.cs    # Panneau d'édition du bloc (texte/perso/couleur/piste/durée)
+            ├── BlockEditorPanel.cs    # Panneau d'édition du bloc (texte/perso/couleur/piste/durée)
+            └── HistoryPanel.cs        # Panneau d'historique (navigation undo/redo cliquable)
 ```
 
 ## Pourquoi c'est plus rapide que la version web/Tauri
@@ -110,6 +111,12 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
     ou **tableur (.csv)** — un seul bouton « 📄 Texte… », le format suit l'extension choisie.
   - Import de sous-titres **.srt / .vtt** comme blocs (bouton « 📥 Sous-titres… ») ;
     remplace les blocs existants (avec confirmation) et ajuste le nombre de pistes.
+- **Commodités** (port des menus Affichage/Édition web) :
+  - **Réglages** (bouton « ⚙ Réglages ») : durée par défaut d'un bloc, décalage de
+    synchro (ms), **statistiques** du projet (blocs, durée cumulée), **réinitialiser
+    la vue** (zoom/hauteur/tête de lecture) et **tout effacer** (annulable).
+  - **Historique** (bouton « 🕘 Historique ») : panneau repliable listant les états
+    passés, l'état courant et les états rétablissables ; un clic y navigue.
 - **Outils d'édition globale** (port des modales web) :
   - **Décaler la timeline** (bouton « ↔ Décaler ») : décale tous les blocs d'un nombre
     de secondes (positif ou négatif, début borné à 0 s).
@@ -131,12 +138,8 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 | `Ctrl+S` / `Ctrl+O` / `Ctrl+I` | Enregistrer / ouvrir / importer une vidéo |
 | `Ctrl+ + / −` | Zoom |
 
-## Étapes suivantes (non incluses dans la V1)
+## Étapes suivantes (au-delà de la version web)
 
-Fonctions de la version web restant à porter :
-
-- Fenêtre Statistiques, panneau d'historique visuel, réglages (durée par défaut,
-  sync offset), « Tout supprimer », « Réinitialiser la vue ».
-
-Pistes d'évolution au-delà de la version web : enregistrement vocal intégré
-(microphone), VU-mètre, verrouillage de blocs.
+L'intégralité des fonctionnalités de la version web est désormais portée. Pistes
+d'évolution restantes : enregistrement vocal intégré (microphone), VU-mètre,
+verrouillage de blocs.
