@@ -28,7 +28,8 @@ RhythmoSync.Desktop/
         └── Controls/
             ├── RhythmoBandControl.cs  # Bande rythmo native
             ├── WaveformControl.cs     # Forme d'onde en tuiles de 30 s
-            └── AudioMixerPanel.cs     # Panneau du mixeur (volume/mute/solo/fichier)
+            ├── AudioMixerPanel.cs     # Panneau du mixeur (volume/mute/solo/fichier)
+            └── BlockEditorPanel.cs    # Panneau d'édition du bloc (texte/perso/couleur/piste/durée)
 ```
 
 ## Pourquoi c'est plus rapide que la version web/Tauri
@@ -98,6 +99,11 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
   - Pistes sauvegardées dans le `.rsp` (champ `audioTracks`, compatible web) ; un chemin
     introuvable (ex. URL blob d'un vieux projet web) restaure les réglages sans lecture.
 - Ouverture par ligne de commande : `RhythmoSyncStudio.exe fichier.rsp` (ou une vidéo).
+- **Panneau d'édition du bloc** (port de l'EditorSidebar web) : panneau à droite qui,
+  pour le bloc sélectionné, permet de modifier le **texte**, le **personnage**, la
+  **couleur** (8 préréglages + champ hexadécimal), la **piste** et la **durée**
+  (avec réinitialisation), affiche l'alerte « trop rapide » et le timecode, et permet
+  de supprimer le bloc. Repliable via le bouton « ✏ Édition ».
 - **Outils d'édition globale** (port des modales web) :
   - **Décaler la timeline** (bouton « ↔ Décaler ») : décale tous les blocs d'un nombre
     de secondes (positif ou négatif, début borné à 0 s).
@@ -121,6 +127,12 @@ Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish
 
 ## Étapes suivantes (non incluses dans la V1)
 
-Le cœur fonctionnel de la version web est désormais entièrement porté. Pistes
-d'évolution restantes : enregistrement vocal intégré (microphone), VU-mètre,
-verrouillage de blocs.
+Fonctions de la version web restant à porter :
+
+- Exports texte : SubRip `.srt`, WebVTT `.vtt`, transcript `.txt`, tableur `.csv`,
+  et import de sous-titres `.srt`.
+- Fenêtre Statistiques, panneau d'historique visuel, réglages (durée par défaut,
+  sync offset), « Tout supprimer », « Réinitialiser la vue ».
+
+Pistes d'évolution au-delà de la version web : enregistrement vocal intégré
+(microphone), VU-mètre, verrouillage de blocs.
