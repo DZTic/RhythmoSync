@@ -17,6 +17,7 @@ namespace RhythmoSync.App;
 public partial class MainWindow : Window
 {
     private readonly ProjectState _state = new();
+    private readonly RecentProjectsStore _recent = new();
 
     // ── Horloge de lecture ────────────────────────────────────────────────────
     // MediaElement.Position ne se met à jour que par paliers ; comme dans la
@@ -374,6 +375,44 @@ public partial class MainWindow : Window
         OpenProjectFromPath(dialog.FileName);
     }
 
+    private void OnRecentProjects(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        if (_recent.Paths.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Aucun projet récent", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var path in _recent.Paths)
+            {
+                var captured = path;
+                var item = new MenuItem { Header = Path.GetFileName(path), ToolTip = path };
+                item.Click += (_, _) => OpenRecent(captured);
+                menu.Items.Add(item);
+            }
+            menu.Items.Add(new Separator());
+            var clear = new MenuItem { Header = "Effacer la liste" };
+            clear.Click += (_, _) => _recent.Clear();
+            menu.Items.Add(clear);
+        }
+        menu.PlacementTarget = RecentButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void OpenRecent(string path)
+    {
+        if (!File.Exists(path))
+        {
+            MessageBox.Show(this, $"Le fichier est introuvable et a été retiré de la liste :\n{path}",
+                "Projet récent", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _recent.Remove(path);
+            return;
+        }
+        OpenProjectFromPath(path);
+    }
+
     private void OpenProjectFromPath(string fileName)
     {
         try
@@ -381,6 +420,7 @@ public partial class MainWindow : Window
             var project = ProjectIo.Load(fileName);
             _state.ImportProject(project);
             _currentProjectPath = fileName;
+            _recent.Add(fileName);
 
             if (project.VideoPath is { } videoPath && File.Exists(videoPath))
             {
@@ -422,6 +462,7 @@ public partial class MainWindow : Window
         {
             ProjectIo.Save(path, _state.ToProjectFile());
             _currentProjectPath = path;
+            _recent.Add(path);
             StatusLeft.Text = $"Projet enregistré : {Path.GetFileName(path)}";
         }
         catch (Exception ex)
