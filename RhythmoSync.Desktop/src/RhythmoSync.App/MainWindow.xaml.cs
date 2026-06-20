@@ -40,6 +40,15 @@ public partial class MainWindow : Window
     private DialogueBlock? _editingBlock;
     private int _frameCount;
 
+    // ── Mode Présentation / Doublage (plein écran, port du isPresentationMode web) ──
+    // On réutilise le même MediaElement et la même bande : on masque seulement le
+    // « chrome » d'édition et on bascule la fenêtre en plein écran sans bordure.
+    private bool _isPresenting;
+    private WindowStyle _prePresentStyle;
+    private WindowState _prePresentState;
+    private ResizeMode _prePresentResize;
+    private readonly Dictionary<UIElement, Visibility> _prePresentVisibility = [];
+
     // ── Proxy All-Intra ───────────────────────────────────────────────────────
     // _state.VideoPath reste TOUJOURS le fichier original (.rsp, export, waveform,
     // letterbox) ; seul Media.Source reçoit le proxy quand le format est illisible.
@@ -67,6 +76,7 @@ public partial class MainWindow : Window
         {
             LaneCountText.Text = _state.TotalLanes.ToString();
             if (Math.Abs(ZoomSlider.Value - _state.ZoomLevel) > 0.5) ZoomSlider.Value = _state.ZoomLevel;
+            if (Math.Abs(LaneHeightSlider.Value - _state.LaneHeightPx) > 0.5) LaneHeightSlider.Value = _state.LaneHeightPx;
             SnapCheck.IsChecked = _state.SnapEnabled;
         };
 
@@ -803,6 +813,11 @@ public partial class MainWindow : Window
     private void OnLaneMinus(object sender, RoutedEventArgs e) => _state.TotalLanes--;
     private void OnLanePlus(object sender, RoutedEventArgs e) => _state.TotalLanes++;
 
+    private void OnLaneHeightChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_state is not null) _state.LaneHeightPx = e.NewValue;
+    }
+
     private void OnFpsChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_state is not null && FpsCombo.SelectedItem is string s &&
@@ -872,6 +887,67 @@ public partial class MainWindow : Window
         }
     }
 
+    // ── Mode Présentation / Doublage ─────────────────────────────────────────
+
+    private void OnPresentation(object sender, RoutedEventArgs e) => TogglePresentationMode();
+    private void OnExitPresentation(object sender, RoutedEventArgs e) => ExitPresentationMode();
+
+    private void TogglePresentationMode()
+    {
+        if (_isPresenting) ExitPresentationMode();
+        else EnterPresentationMode();
+    }
+
+    /// <summary>
+    /// Bascule en plein écran sans bordure et masque le « chrome » d'édition
+    /// (barre d'outils, barre d'état, panneaux latéraux, forme d'onde) : seuls la
+    /// vidéo, la bande rythmo et le transport restent visibles, comme la modale web.
+    /// </summary>
+    private void EnterPresentationMode()
+    {
+        if (_isPresenting) return;
+        _isPresenting = true;
+
+        _prePresentStyle = WindowStyle;
+        _prePresentState = WindowState;
+        _prePresentResize = ResizeMode;
+
+        _prePresentVisibility.Clear();
+        foreach (var el in PresentationChrome())
+        {
+            _prePresentVisibility[el] = el.Visibility;
+            el.Visibility = Visibility.Collapsed;
+        }
+        PresentationHint.Visibility = Visibility.Visible;
+        PresentationButton.Background = (Brush)FindResource("Accent");
+
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        // Pour couvrir la barre des tâches, il faut repasser par Normal puis Maximized.
+        if (WindowState == WindowState.Maximized) WindowState = WindowState.Normal;
+        WindowState = WindowState.Maximized;
+    }
+
+    private void ExitPresentationMode()
+    {
+        if (!_isPresenting) return;
+        _isPresenting = false;
+
+        foreach (var (el, visibility) in _prePresentVisibility)
+            el.Visibility = visibility;
+        _prePresentVisibility.Clear();
+        PresentationHint.Visibility = Visibility.Collapsed;
+        PresentationButton.Background = (Brush)FindResource("BgControl");
+
+        WindowStyle = _prePresentStyle;
+        ResizeMode = _prePresentResize;
+        WindowState = _prePresentState;
+    }
+
+    /// <summary>Éléments d'interface masqués en mode Présentation.</summary>
+    private UIElement[] PresentationChrome() =>
+        [ToolbarBorder, StatusBorder, BlockEditorBorder, HistoryBorder, MixerPanel, Wave];
+
     // ── Raccourcis clavier ───────────────────────────────────────────────────
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -884,6 +960,16 @@ public partial class MainWindow : Window
 
         switch (e.Key)
         {
+            case Key.F11:
+                TogglePresentationMode();
+                e.Handled = true;
+                break;
+
+            case Key.Escape when _isPresenting:
+                ExitPresentationMode();
+                e.Handled = true;
+                break;
+
             case Key.Space:
                 TogglePlay();
                 e.Handled = true;

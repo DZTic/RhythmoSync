@@ -72,6 +72,15 @@
                     ToolTip="Supprimer tous les blocs de dialogue (annulable avec Ctrl+Z)"/>
         </StackPanel>
 
+        <Rectangle Height="1" Fill="{StaticResource BorderSubtle}" Margin="0,16"/>
+
+        <!-- ── Raccourcis clavier (liste de référence) ──────────────────────── -->
+        <TextBlock Text="RACCOURCIS CLAVIER" Foreground="{StaticResource TextMuted}" FontSize="10" FontWeight="Bold" Margin="0,0,0,8"/>
+        <Border Background="{StaticResource BgPanel}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                CornerRadius="6" Padding="12,6">
+            <StackPanel x:Name="ShortcutList"/>
+        </Border>
+
         <!-- ── Boutons ──────────────────────────────────────────────────────── -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button Style="{StaticResource AccentButton}" Content="Enregistrer" Padding="14,6"
