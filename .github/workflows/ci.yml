@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore RhythmoSync.Desktop/RhythmoSync.Desktop.sln
+
+      - name: Build (Release)
+        run: dotnet build RhythmoSync.Desktop/RhythmoSync.Desktop.sln -c Release --no-restore
+
+      - name: Test (Release)
+        run: dotnet test RhythmoSync.Desktop/RhythmoSync.Desktop.sln -c Release --no-build --verbosity normal
