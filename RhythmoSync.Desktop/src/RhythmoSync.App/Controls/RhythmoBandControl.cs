@@ -255,6 +255,12 @@ public sealed class RhythmoBandControl : FrameworkElement
             dc.DrawText(warn, new Point(4, laneHeight / 2 - 7));
         }
 
+        if (block.IsLocked && width > 16)
+        {
+            var lockIcon = MakeText("🔒", 11, Brushes.White);
+            dc.DrawText(lockIcon, new Point(width - lockIcon.Width - 3, VPad + 2));
+        }
+
         if (block.Text.Length > 0)
         {
             // Texte étiré horizontalement pour remplir exactement la largeur du bloc
@@ -413,7 +419,7 @@ public sealed class RhythmoBandControl : FrameworkElement
         var pps = _state.ZoomLevel;
         foreach (var d in _state.Dialogues)
         {
-            if (!_state.IsSelected(d.Id)) continue;
+            if (!_state.IsSelected(d.Id) || d.IsLocked) continue;
             var lane = (int)(p.Y / _state.LaneHeightPx);
             if (d.Lane != lane) continue;
             var leftX = d.StartTime * pps + _scroll.X;
@@ -459,6 +465,13 @@ public sealed class RhythmoBandControl : FrameworkElement
                 if (!_state.IsSelected(block.Id)) _state.SelectBlock(block.Id, multi);
                 else if (multi) _state.SelectBlock(block.Id, true);
 
+                // Bloc verrouillé : sélectionnable (édition via panneau) mais non déplaçable.
+                if (block.IsLocked)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
                 _state.SnapshotHistory();
                 _drag = DragMode.MoveBlock;
                 _dragBlockId = block.Id;
@@ -466,8 +479,9 @@ public sealed class RhythmoBandControl : FrameworkElement
                 _dragOriginStart = block.StartTime;
                 _dragOriginLane = block.Lane;
 
+                // Les blocs verrouillés de la sélection ne suivent pas le déplacement groupé.
                 _multiDragOrigin = _state.SelectedIds.Count > 1
-                    ? _state.Dialogues.Where(d => _state.IsSelected(d.Id))
+                    ? _state.Dialogues.Where(d => _state.IsSelected(d.Id) && !d.IsLocked)
                         .ToDictionary(d => d.Id, d => (d.StartTime, d.Lane))
                     : [];
 
@@ -577,7 +591,7 @@ public sealed class RhythmoBandControl : FrameworkElement
     {
         if (_isPlaying) { Cursor = Cursors.Arrow; return; }
         if (HitResizeHandle(p) is not null) Cursor = Cursors.SizeWE;
-        else if (HitBlock(p) is not null) Cursor = Cursors.Hand;
+        else if (HitBlock(p) is { } hover) Cursor = hover.IsLocked ? Cursors.Arrow : Cursors.Hand;
         else Cursor = Cursors.Arrow;
     }
 

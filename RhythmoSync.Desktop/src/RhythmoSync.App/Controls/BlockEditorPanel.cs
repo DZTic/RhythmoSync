@@ -45,6 +45,7 @@ public sealed class BlockEditorPanel : ScrollViewer
     private readonly TextBox _hexBox;
     private readonly TextBox _laneBox;
     private readonly TextBox _durationBox;
+    private readonly CheckBox _lockCheck;
     private readonly TextBlock _startText;
     private readonly TextBlock _endText;
 
@@ -171,6 +172,17 @@ public sealed class BlockEditorPanel : ScrollViewer
         infoStack.Children.Add(InfoRow("Fin", _endText));
         info.Child = infoStack;
 
+        // Verrouillage (anti-déplacement accidentel)
+        _lockCheck = new CheckBox
+        {
+            Content = "🔒  Verrouiller (anti-déplacement)",
+            Foreground = Res<Brush>("TextPrimary"),
+            FontSize = 12,
+            Margin = new Thickness(0, 16, 0, 0),
+            ToolTip = "Empêche le déplacement et le redimensionnement (Ctrl+L). Le texte reste éditable.",
+        };
+        _lockCheck.Click += (_, _) => ApplyLock();
+
         // Suppression
         var deleteButton = new Button
         {
@@ -200,6 +212,7 @@ public sealed class BlockEditorPanel : ScrollViewer
         _fields.Children.Add(laneDurationGrid);
         _fields.Children.Add(Spacer());
         _fields.Children.Add(info);
+        _fields.Children.Add(_lockCheck);
         _fields.Children.Add(deleteButton);
 
         var root = new Grid();
@@ -257,6 +270,7 @@ public sealed class BlockEditorPanel : ScrollViewer
             _headerId.Text = "#" + (block.Id.Length >= 6 ? block.Id[^6..] : block.Id);
             _startText.Text = block.StartTime.ToString("0.000", CultureInfo.InvariantCulture) + " s";
             _endText.Text = block.EndTime.ToString("0.000", CultureInfo.InvariantCulture) + " s";
+            _lockCheck.IsChecked = block.IsLocked;
 
             var tooFast = block.IsTooFast;
             _warning.Visibility = tooFast ? Visibility.Visible : Visibility.Collapsed;
@@ -315,6 +329,14 @@ public sealed class BlockEditorPanel : ScrollViewer
         if (!double.TryParse(_durationBox.Text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)) return;
         if (seconds < 0.1) return;
         _state.UpdateDialogue(b.Id, d => d with { Duration = seconds }, skipHistory: true);
+    }
+
+    private void ApplyLock()
+    {
+        if (CurrentBlock() is not { } b || _state is null) return;
+        var locked = _lockCheck.IsChecked == true;
+        _state.SnapshotHistory();
+        _state.UpdateDialogue(b.Id, d => d with { IsLocked = locked });
     }
 
     private void ApplyColor(string hex, bool snapshot)
