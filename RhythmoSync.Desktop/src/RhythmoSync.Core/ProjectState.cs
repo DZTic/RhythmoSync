@@ -213,6 +213,69 @@ public sealed class ProjectState
         Commit(_dialogues.Select(d => set.Contains(d.Id) ? d with { GroupId = null } : d).ToList(), snapshot: true);
     }
 
+    /// <summary>
+    /// Bascule l'état verrouillé des blocs sélectionnés : si au moins un est
+    /// déverrouillé, tous passent verrouillés ; sinon tous sont déverrouillés. Annulable.
+    /// </summary>
+    /// <returns>Le nouvel état verrouillé appliqué, ou null si rien n'est sélectionné.</returns>
+    public bool? ToggleLockSelected()
+    {
+        if (_selected.Count == 0) return null;
+        var set = _selected.ToHashSet();
+        var locked = _dialogues.Any(d => set.Contains(d.Id) && !d.IsLocked);
+        Commit(_dialogues.Select(d => set.Contains(d.Id) ? d with { IsLocked = locked } : d).ToList(), snapshot: true);
+        return locked;
+    }
+
+    /// <summary>
+    /// Vrai si exactement deux blocs de la même piste sont sélectionnés : seul cas
+    /// où <see cref="MergeSelected"/> peut fusionner. Pilote l'activation de l'action UI.
+    /// </summary>
+    public bool CanMergeSelected
+    {
+        get
+        {
+            if (_selected.Count != 2) return false;
+            var pair = _dialogues.Where(d => _selected.Contains(d.Id)).ToList();
+            return pair.Count == 2 && pair[0].Lane == pair[1].Lane;
+        }
+    }
+
+    /// <summary>
+    /// Fusionne les deux blocs sélectionnés (même piste) en un seul : l'intervalle
+    /// couvre du début du premier à la fin du dernier (dans l'ordre temporel) et le
+    /// texte est concaténé. Le bloc résultant conserve l'identité, le personnage et la
+    /// couleur du bloc le plus précoce. Annulable. Retourne false si la fusion n'est pas applicable.
+    /// </summary>
+    public bool MergeSelected()
+    {
+        if (!CanMergeSelected) return false;
+
+        var pair = _dialogues.Where(d => _selected.Contains(d.Id)).OrderBy(d => d.StartTime).ToList();
+        var first = pair[0];
+        var second = pair[1];
+
+        var start = Math.Min(first.StartTime, second.StartTime);
+        var end = Math.Max(first.EndTime, second.EndTime);
+        var text = string.Join(" ",
+            new[] { first.Text, second.Text }.Where(t => !string.IsNullOrWhiteSpace(t)));
+
+        var merged = first with { StartTime = start, Duration = end - start, Text = text };
+
+        var newList = new List<DialogueBlock>(_dialogues.Count - 1);
+        foreach (var d in _dialogues)
+        {
+            if (d.Id == second.Id) continue;
+            newList.Add(d.Id == first.Id ? merged : d);
+        }
+        Commit(newList, snapshot: true);
+
+        _selected.Clear();
+        _selected.Add(merged.Id);
+        SelectionChanged?.Invoke();
+        return true;
+    }
+
     // ── Sélection ────────────────────────────────────────────────────────────
 
     public void SelectBlock(string? id, bool multi = false)

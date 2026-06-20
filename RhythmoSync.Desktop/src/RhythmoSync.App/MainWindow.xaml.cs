@@ -1018,6 +1018,16 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            case Key.M when ctrl:
+                MergeSelectedBlocks();
+                e.Handled = true;
+                break;
+
+            case Key.L when ctrl:
+                ToggleLockSelected();
+                e.Handled = true;
+                break;
+
             case Key.H when ctrl:
                 OnFindReplace(this, new RoutedEventArgs());
                 e.Handled = true;
@@ -1055,6 +1065,23 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    private void MergeSelectedBlocks()
+    {
+        StatusLeft.Text = _state.MergeSelected()
+            ? "Blocs fusionnés."
+            : "Sélectionnez deux blocs de la même piste pour les fusionner.";
+    }
+
+    private void ToggleLockSelected()
+    {
+        StatusLeft.Text = _state.ToggleLockSelected() switch
+        {
+            true => "Bloc(s) verrouillé(s) 🔒.",
+            false => "Bloc(s) déverrouillé(s).",
+            null => "Sélectionnez un ou plusieurs blocs à (dé)verrouiller.",
+        };
     }
 
     private void NudgeSelection(double deltaSeconds)

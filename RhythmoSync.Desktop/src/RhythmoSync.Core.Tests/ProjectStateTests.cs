@@ -190,6 +190,158 @@ public class ProjectStateTests
         Assert.True(s.IsSelected("b"));
     }
 
+    // ── Fusion de blocs ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void MergeSelected_CombinesIntervalAndText()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", StartTime = 1, Duration = 2, Text = "Bonjour", CharacterName = "Jean", Color = "#abc", Lane = 0 },
+            new DialogueBlock { Id = "b", StartTime = 3, Duration = 1, Text = "le monde", CharacterName = "Marie", Color = "#def", Lane = 0 },
+        ]);
+        s.SelectBlock("a");
+        s.SelectBlock("b", multi: true);
+
+        Assert.True(s.CanMergeSelected);
+        Assert.True(s.MergeSelected());
+
+        Assert.Single(s.Dialogues);
+        var m = s.Dialogues[0];
+        Assert.Equal("a", m.Id);                 // identité du bloc le plus précoce
+        Assert.Equal(1, m.StartTime, 9);
+        Assert.Equal(4, m.EndTime, 9);           // de 1 à 4
+        Assert.Equal("Bonjour le monde", m.Text);
+        Assert.Equal("Jean", m.CharacterName);   // personnage/couleur du 1er bloc
+        Assert.Equal("#abc", m.Color);
+        Assert.True(s.IsSelected("a"));          // le bloc fusionné reste sélectionné
+    }
+
+    [Fact]
+    public void MergeSelected_OrdersByStartTimeRegardlessOfSelectionOrder()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "late", StartTime = 5, Duration = 1, Text = "deux", Lane = 0 },
+            new DialogueBlock { Id = "early", StartTime = 1, Duration = 1, Text = "un", Lane = 0 },
+        ]);
+        s.SelectBlock("late");
+        s.SelectBlock("early", multi: true);
+
+        Assert.True(s.MergeSelected());
+        var m = s.Dialogues[0];
+        Assert.Equal("early", m.Id);
+        Assert.Equal("un deux", m.Text);
+        Assert.Equal(1, m.StartTime, 9);
+        Assert.Equal(6, m.EndTime, 9);
+    }
+
+    [Fact]
+    public void CanMergeSelected_FalseForDifferentLanes()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", StartTime = 1, Duration = 1, Lane = 0 },
+            new DialogueBlock { Id = "b", StartTime = 2, Duration = 1, Lane = 1 },
+        ]);
+        s.SelectBlock("a");
+        s.SelectBlock("b", multi: true);
+
+        Assert.False(s.CanMergeSelected);
+        Assert.False(s.MergeSelected());
+        Assert.Equal(2, s.Dialogues.Count);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void MergeSelected_RequiresExactlyTwoBlocks(int selectionCount)
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", StartTime = 0, Duration = 1, Lane = 0 },
+            new DialogueBlock { Id = "b", StartTime = 1, Duration = 1, Lane = 0 },
+            new DialogueBlock { Id = "c", StartTime = 2, Duration = 1, Lane = 0 },
+        ]);
+        var ids = new[] { "a", "b", "c" }.Take(selectionCount).ToList();
+        s.SelectBlock(ids[0]);
+        foreach (var id in ids.Skip(1)) s.SelectBlock(id, multi: true);
+
+        Assert.False(s.CanMergeSelected);
+        Assert.False(s.MergeSelected());
+    }
+
+    [Fact]
+    public void MergeSelected_IsUndoable()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", StartTime = 0, Duration = 1, Text = "x", Lane = 0 },
+            new DialogueBlock { Id = "b", StartTime = 1, Duration = 1, Text = "y", Lane = 0 },
+        ]);
+        s.SelectBlock("a");
+        s.SelectBlock("b", multi: true);
+        s.MergeSelected();
+        Assert.Single(s.Dialogues);
+
+        s.Undo();
+        Assert.Equal(2, s.Dialogues.Count);
+    }
+
+    // ── Verrouillage de blocs ────────────────────────────────────────────────
+
+    [Fact]
+    public void ToggleLockSelected_LocksThenUnlocks()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a"), Block("b")]);
+        s.SelectBlock("a");
+
+        Assert.Equal(true, s.ToggleLockSelected());
+        Assert.True(s.Dialogues.First(d => d.Id == "a").IsLocked);
+        Assert.False(s.Dialogues.First(d => d.Id == "b").IsLocked);
+
+        Assert.Equal(false, s.ToggleLockSelected());
+        Assert.False(s.Dialogues.First(d => d.Id == "a").IsLocked);
+    }
+
+    [Fact]
+    public void ToggleLockSelected_MixedSelection_LocksAll()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", IsLocked = true },
+            new DialogueBlock { Id = "b", IsLocked = false },
+        ]);
+        s.SelectBlock("a");
+        s.SelectBlock("b", multi: true);
+
+        // Au moins un déverrouillé ⇒ tout devient verrouillé
+        Assert.Equal(true, s.ToggleLockSelected());
+        Assert.True(s.Dialogues.All(d => d.IsLocked));
+    }
+
+    [Fact]
+    public void ToggleLockSelected_ReturnsNullWhenNothingSelected()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a")]);
+        Assert.Null(s.ToggleLockSelected());
+    }
+
+    [Fact]
+    public void ToggleLockSelected_IsUndoable()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a")]);
+        s.SelectBlock("a");
+        s.ToggleLockSelected();
+        Assert.True(s.Dialogues[0].IsLocked);
+
+        s.Undo();
+        Assert.False(s.Dialogues[0].IsLocked);
+    }
+
     // ── Outils timeline ──────────────────────────────────────────────────────
 
     [Fact]

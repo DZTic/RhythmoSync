@@ -43,6 +43,8 @@ public partial class SettingsDialog : Window
             ("Suppr", "Supprimer la sélection"),
             ("Ctrl+C  /  Ctrl+V", "Copier / Coller"),
             ("Ctrl+G  /  Ctrl+Maj+G", "Grouper / Dégrouper"),
+            ("Ctrl+M", "Fusionner deux blocs sélectionnés"),
+            ("Ctrl+L", "Verrouiller / déverrouiller la sélection"),
             ("← / →", "Tête de lecture (image ; Maj = 1 s)"),
             ("Ctrl+← / →", "Décaler la sélection"),
             ("Ctrl++  /  Ctrl+−", "Zoom avant / arrière"),

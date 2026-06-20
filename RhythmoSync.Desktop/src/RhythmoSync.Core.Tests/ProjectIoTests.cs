@@ -40,6 +40,25 @@ public class ProjectIoTests : IDisposable
     }
 
     [Fact]
+    public void SaveThenLoad_PreservesLockedState()
+    {
+        var project = new ProjectFile
+        {
+            Dialogues =
+            [
+                new DialogueBlock { Id = "a", IsLocked = true },
+                new DialogueBlock { Id = "b", IsLocked = false },
+            ],
+        };
+
+        ProjectIo.Save(_path, project);
+        var loaded = ProjectIo.Load(_path);
+
+        Assert.True(loaded.Dialogues.First(d => d.Id == "a").IsLocked);
+        Assert.False(loaded.Dialogues.First(d => d.Id == "b").IsLocked);
+    }
+
+    [Fact]
     public void Save_StampsTimestamp()
     {
         var project = new ProjectFile();

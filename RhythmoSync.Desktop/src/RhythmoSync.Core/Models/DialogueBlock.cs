@@ -27,6 +27,12 @@ public sealed record DialogueBlock
     /// <summary>Identifiant de groupe : les blocs d'un même groupe se sélectionnent ensemble.</summary>
     public string? GroupId { get; init; }
 
+    /// <summary>
+    /// Bloc verrouillé : ne peut être ni déplacé ni redimensionné (anti-déplacement
+    /// accidentel en session). Reste sélectionnable et éditable via le panneau.
+    /// </summary>
+    public bool IsLocked { get; init; }
+
     public double EndTime => StartTime + Duration;
 
     /// <summary>Vrai si le texte dépasse la vitesse de lecture recommandée (20 car/s).</summary>
