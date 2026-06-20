@@ -1,5 +1,7 @@
 # 🎙️ RhythmoSync Studio
 
+[![CI](https://github.com/DZTic/RhythmoSync/actions/workflows/ci.yml/badge.svg)](https://github.com/DZTic/RhythmoSync/actions/workflows/ci.yml)
+
 **RhythmoSync Studio** est un outil professionnel de doublage et de création de bande rythmo, conçu pour offrir une expérience fluide et précise aux comédiens, directeurs artistiques et ingénieurs du son.
 
 Application **Windows native** (C# / WPF, .NET 8) — sans Tauri ni WebView, pour de bien meilleures performances (rendu GPU « retained mode », virtualisation, empreinte mémoire constante).
