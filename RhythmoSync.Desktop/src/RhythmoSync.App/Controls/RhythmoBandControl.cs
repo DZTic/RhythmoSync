@@ -26,6 +26,7 @@ public sealed class RhythmoBandControl : FrameworkElement
     private readonly DrawingVisual _background = new();
     private readonly ContainerVisual _movingRoot = new();
     private readonly DrawingVisual _ruler = new();
+    private readonly DrawingVisual _markersVisual = new();
     private readonly DrawingVisual _snapIndicator = new();
     private readonly DrawingVisual _syncOverlay = new();
     private readonly TranslateTransform _scroll = new();
@@ -70,6 +71,7 @@ public sealed class RhythmoBandControl : FrameworkElement
 
         _movingRoot.Transform = _scroll;
         _movingRoot.Children.Add(_ruler);
+        _movingRoot.Children.Add(_markersVisual);
         _movingRoot.Children.Add(_snapIndicator);
 
         _children.Add(_background);
@@ -96,8 +98,11 @@ public sealed class RhythmoBandControl : FrameworkElement
             InvalidateRuler();
             RedrawBackground();
             RedrawSyncOverlay();
+            RedrawMarkers();
             UpdateTime(_time);
         };
+        _state.MarkersChanged += RedrawMarkers;
+        Loaded += (_, _) => RedrawMarkers();
     }
 
     protected override int VisualChildrenCount => _children.Count;
@@ -336,6 +341,33 @@ public sealed class RhythmoBandControl : FrameworkElement
         dc.DrawGeometry(red, null, arrow);
     }
 
+    /// <summary>
+    /// Marqueurs nommés dessinés dans l'espace défilant (donc recalés gratuitement
+    /// par la TranslateTransform). Re-rendu seulement quand les marqueurs, le zoom ou
+    /// la hauteur changent — pas à chaque frame.
+    /// </summary>
+    private void RedrawMarkers()
+    {
+        using var dc = _markersVisual.RenderOpen();
+        if (_state is null || _state.Markers.Count == 0) return;
+
+        var pps = _state.ZoomLevel;
+        var height = _state.TotalBandHeight;
+        var cyan = Color.FromRgb(0x22, 0xd3, 0xee);
+        var line = FrozenPen(new Pen(new SolidColorBrush(cyan) { Opacity = 0.85 }, 1.5) { DashStyle = new DashStyle([2, 3], 0) });
+        var flag = Frozen(new SolidColorBrush(cyan));
+        var labelBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x06, 0x2a, 0x30)));
+
+        foreach (var m in _state.Markers)
+        {
+            var x = m.Time * pps;
+            dc.DrawLine(line, new Point(x, 0), new Point(x, height));
+            var text = MakeText(string.IsNullOrWhiteSpace(m.Label) ? "●" : m.Label, 9, labelBrush);
+            dc.DrawRoundedRectangle(flag, null, new Rect(x, 0, text.Width + 8, 13), 3, 3);
+            dc.DrawText(text, new Point(x + 4, 1));
+        }
+    }
+
     private void InvalidateRuler() => _rulerFirstTick = long.MinValue;
 
     /// <summary>
@@ -399,6 +431,20 @@ public sealed class RhythmoBandControl : FrameworkElement
     private int YToLane(double y) =>
         Math.Clamp((int)(y / _state.LaneHeightPx), 0, _state.TotalLanes - 1);
 
+    /// <summary>Marqueur sous le pointeur dans le bandeau supérieur (étiquette), sinon null.</summary>
+    private Marker? HitMarker(Point p)
+    {
+        if (_state is null || p.Y > 14) return null;
+        var pps = _state.ZoomLevel;
+        foreach (var m in _state.Markers)
+        {
+            var x = m.Time * pps + _scroll.X;
+            if (p.X >= x - 4 && p.X <= x + MakeText(string.IsNullOrWhiteSpace(m.Label) ? "●" : m.Label, 9, Brushes.Black).Width + 10)
+                return m;
+        }
+        return null;
+    }
+
     private DialogueBlock? HitBlock(Point p)
     {
         var time = XToTime(p.X);
@@ -443,6 +489,14 @@ public sealed class RhythmoBandControl : FrameworkElement
         if (e.ClickCount == 2)
         {
             HandleDoubleClick(p);
+            e.Handled = true;
+            return;
+        }
+
+        // Clic sur l'étiquette d'un marqueur → téléportation de la tête de lecture.
+        if (HitMarker(p) is { } marker)
+        {
+            SeekRequested?.Invoke(marker.Time);
             e.Handled = true;
             return;
         }
