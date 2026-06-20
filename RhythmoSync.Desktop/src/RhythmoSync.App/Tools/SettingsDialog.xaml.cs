@@ -1,13 +1,15 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using RhythmoSync.Core;
 
 namespace RhythmoSync.App.Tools;
 
 /// <summary>
 /// Boîte de dialogue « Réglages » (port de la modale SETTINGS + STATS web) :
-/// durée par défaut, décalage de synchro, statistiques du projet, et actions
-/// « réinitialiser la vue » / « tout effacer ».
+/// durée par défaut, décalage de synchro, statistiques du projet, actions
+/// « réinitialiser la vue » / « tout effacer », et liste de référence des raccourcis.
 /// </summary>
 public partial class SettingsDialog : Window
 {
@@ -27,6 +29,46 @@ public partial class SettingsDialog : Window
         StatBlocks.Text = state.Dialogues.Count.ToString(CultureInfo.InvariantCulture);
         var total = state.Dialogues.Sum(d => d.Duration);
         StatDuration.Text = total.ToString("0.00", CultureInfo.InvariantCulture) + " s";
+
+        BuildShortcutList();
+    }
+
+    /// <summary>Liste de référence des raccourcis (reflète <c>MainWindow.OnWindowKeyDown</c>).</summary>
+    private void BuildShortcutList()
+    {
+        (string Keys, string Label)[] shortcuts =
+        [
+            ("Espace", "Lecture / Pause"),
+            ("Ctrl+Z  /  Ctrl+Y", "Annuler / Rétablir"),
+            ("Suppr", "Supprimer la sélection"),
+            ("Ctrl+C  /  Ctrl+V", "Copier / Coller"),
+            ("Ctrl+G  /  Ctrl+Maj+G", "Grouper / Dégrouper"),
+            ("← / →", "Tête de lecture (image ; Maj = 1 s)"),
+            ("Ctrl+← / →", "Décaler la sélection"),
+            ("Ctrl++  /  Ctrl+−", "Zoom avant / arrière"),
+            ("Ctrl+S  /  Ctrl+Maj+S", "Enregistrer / Enregistrer sous"),
+            ("Ctrl+O", "Ouvrir un projet"),
+            ("Ctrl+I", "Importer une vidéo"),
+            ("Ctrl+H", "Rechercher / Remplacer"),
+            ("F11 / Échap", "Mode Présentation / quitter"),
+        ];
+
+        var muted = (Brush)FindResource("TextMuted");
+        var primary = (Brush)FindResource("TextPrimary");
+        foreach (var (keys, label) in shortcuts)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var keyText = new TextBlock
+            {
+                Text = keys, Foreground = primary, FontFamily = new FontFamily("Consolas"),
+                FontSize = 11, FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            DockPanel.SetDock(keyText, Dock.Right);
+            row.Children.Add(keyText);
+            row.Children.Add(new TextBlock { Text = label, Foreground = muted, FontSize = 11 });
+            ShortcutList.Children.Add(row);
+        }
     }
 
     private void OnSave(object sender, RoutedEventArgs e)

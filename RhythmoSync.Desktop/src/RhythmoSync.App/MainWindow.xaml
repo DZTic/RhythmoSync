@@ -13,7 +13,7 @@
     <DockPanel>
 
         <!-- ── Barre d'outils ─────────────────────────────────────────────── -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource BgPanel}"
+        <Border x:Name="ToolbarBorder" DockPanel.Dock="Top" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="8,6">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
@@ -45,6 +45,8 @@
                             ToolTip="Afficher / masquer le panneau d'historique (annuler / rétablir)"/>
                     <Button x:Name="SettingsButton" Style="{StaticResource ToolButton}" Content="⚙ Réglages" Click="OnSettings"
                             ToolTip="Réglages (durée par défaut, synchro), statistiques, réinitialiser la vue, tout effacer"/>
+                    <Button x:Name="PresentationButton" Style="{StaticResource ToolButton}" Content="⛶ Présentation" Click="OnPresentation"
+                            ToolTip="Mode Présentation / Doublage plein écran (F11 ; Échap pour quitter)"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -58,6 +60,10 @@
                     <TextBlock x:Name="LaneCountText" Text="3" Foreground="{StaticResource TextPrimary}"
                                VerticalAlignment="Center" Margin="7,0" FontSize="12" FontWeight="Bold"/>
                     <Button x:Name="LanePlusButton" Style="{StaticResource ToolButton}" Content="＋" Padding="7,2" Margin="0,0,12,0" Click="OnLanePlus"/>
+                    <TextBlock Style="{StaticResource MutedText}" Text="Hauteur"/>
+                    <Slider x:Name="LaneHeightSlider" Width="90" Minimum="40" Maximum="200" Value="80"
+                            VerticalAlignment="Center" Margin="6,0,12,0" ValueChanged="OnLaneHeightChanged"
+                            ToolTip="Échelle verticale : hauteur des pistes (px)"/>
                     <TextBlock Style="{StaticResource MutedText}" Text="FPS"/>
                     <ComboBox x:Name="FpsCombo" Width="64" Margin="6,0,0,0" VerticalAlignment="Center"
                               SelectionChanged="OnFpsChanged" FontSize="11"/>
@@ -67,7 +73,7 @@
         </Border>
 
         <!-- ── Barre d'état ───────────────────────────────────────────────── -->
-        <Border DockPanel.Dock="Bottom" Background="{StaticResource BgPanel}"
+        <Border x:Name="StatusBorder" DockPanel.Dock="Bottom" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="10,3">
             <DockPanel>
                 <TextBlock x:Name="StatusLeft" Style="{StaticResource MutedText}" Text="Prêt." DockPanel.Dock="Left"/>
@@ -138,6 +144,19 @@
                         <Button x:Name="ProxyCancelButton" Style="{StaticResource ToolButton}" Content="Annuler"
                                 HorizontalAlignment="Center" Margin="0,12,0,0" Click="OnProxyCancel"/>
                     </StackPanel>
+
+                    <!-- Bandeau du Mode Présentation / Doublage (overlay, masqué hors présentation) -->
+                    <Border x:Name="PresentationHint" Visibility="Collapsed"
+                            VerticalAlignment="Top" Background="#CC000000" Padding="14,8">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Content="⤫ Quitter"
+                                    Click="OnExitPresentation"/>
+                            <TextBlock Text="🎬 Mode Présentation" Foreground="White" FontWeight="Bold"
+                                       FontSize="13" VerticalAlignment="Center"/>
+                            <TextBlock Text="F11 / Échap pour quitter" Foreground="#80FFFFFF"
+                                       FontFamily="Consolas" FontSize="11" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </Border>
                 </Grid>
             </Border>
 
