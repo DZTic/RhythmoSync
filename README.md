@@ -2,77 +2,36 @@
 
 **RhythmoSync Studio** est un outil professionnel de doublage et de création de bande rythmo, conçu pour offrir une expérience fluide et précise aux comédiens, directeurs artistiques et ingénieurs du son.
 
-> ## ⚡ Nouvelle version : application Windows **native** (C# / WPF, .NET 8)
+Application **Windows native** (C# / WPF, .NET 8) — sans Tauri ni WebView, pour de bien meilleures performances (rendu GPU « retained mode », virtualisation, empreinte mémoire constante).
+
+> Le code de l'application vit dans **[`RhythmoSync.Desktop/`](RhythmoSync.Desktop/README.md)**. Consultez son README pour compiler, lancer et connaître le détail des fonctionnalités.
 >
-> RhythmoSync est en cours de réécriture en **véritable application Windows native**, sans Tauri ni WebView,
-> pour de bien meilleures performances (rendu GPU « retained mode », virtualisation, RAM constante).
-> Le nouveau code vit dans **[`RhythmoSync.Desktop/`](RhythmoSync.Desktop/README.md)** — voir son README
-> pour compiler, lancer et connaître les fonctionnalités déjà portées (lecture, bande rythmo, forme d'onde,
-> undo/redo, projets `.rsp`, **export vidéo MP4 avec bande incrustée**).
->
-> La version React / Tauri décrite ci-dessous reste disponible **comme référence** pendant la migration.
+> *L'ancienne version React / Tauri a été retirée du dépôt une fois la parité atteinte ; elle reste consultable dans l'historique git.*
 
-## ✨ Fonctionnalités Clés *(version React / Tauri — référence)*
+## ✨ Fonctionnalités
 
-- **🎬 Synchronisation Vidéo-Rythmo** : Lecture fluide avec une bande rythmo interactive basée sur Canvas (Konva) pour une précision extrême.
-- **🔊 Mixeur Audio Multi-pistes** : Gérez indépendamment les pistes originales, les voix enregistrées et les bruitages avec fonctions Mute/Solo.
-- **⚡ Génération IA (Whisper)** : Créez automatiquement des blocs de texte à partir de l'audio de la vidéo avec des timecodes précis au mot près.
-- **🛠️ Édition Avancée** :
-  - Timeline avec zoom dynamique.
-  - Outils de recherche et remplacement globaux.
-  - Décalage temporel (Shift timeline).
-  - Magnétisme (Snap) des blocs.
-  - Limitation de vitesse de lecture (indicateurs visuels pour garantir la lisibilité).
-- **📦 Gestion de Projet** : Importez et exportez des sessions complètes au format `.rsp`.
-- **🚀 Performance** : Support des vidéos proxy (All-Intra) pour un défilement (scrubbing) instantané et sans saccades.
+- **🎬 Bande rythmo native** : défilement GPU fluide, magnétisme (snap), multi-sélection, groupes, alerte de vitesse de lecture, double-clic pour créer/éditer.
+- **🔊 Mixeur audio multi-pistes** : pistes Original / Voix / Bruitages, volume / mute / solo.
+- **⚡ Transcription Whisper locale** : génère des blocs de dialogue à partir de l'audio (whisper.cpp, 100 % hors-ligne), avec répartition personnage A/B.
+- **🛠️ Édition** : forme d'onde + scrub, transport, undo/redo (50 niveaux), copier/coller, panneau d'édition du bloc, décalage de timeline, rechercher/remplacer.
+- **🎞️ Export** : MP4 avec bande rythmo incrustée (+ audio source et mix des pistes), proxy All-Intra pour les formats illisibles (MKV / HEVC / AV1…) avec cache.
+- **📄 Texte** : import / export SRT, VTT, TXT, CSV ; import de sous-titres.
+- **🖥️ Mode Présentation / Doublage** : plein écran (F11) pour la session d'enregistrement.
+- **📦 Projets** : format `.rsp` (JSON), compatible avec l'ancienne version web.
 
-## 🛠️ Installation
+## 🚀 Compilation & lancement
 
-**Prérequis :**
-- Node.js (v18+)
-- Rust (pour le mode Desktop via Tauri)
+Prérequis : **.NET 8 SDK** sous Windows. Détails dans **[`RhythmoSync.Desktop/README.md`](RhythmoSync.Desktop/README.md)**.
 
-1. **Cloner le projet** :
-   ```bash
-   git clone [url-du-repo]
-   cd rhythmosync-studio
-   ```
-
-2. **Installer les dépendances** :
-   ```bash
-   npm install
-   ```
-
-
-
-## 🚀 Utilisation
-
-### Mode Développement (Web)
-Pour lancer l'aperçu web dans votre navigateur :
 ```bash
-npm run dev
+dotnet build RhythmoSync.Desktop/RhythmoSync.Desktop.sln -c Release
 ```
 
-### Mode Desktop (Tauri)
-Pour lancer l'application native (Windows/macOS/Linux) :
-```bash
-npm run tauri:dev
-```
+## 📚 Notes & propositions
 
-### Build Production
-```bash
-npm run tauri:build
-```
-
-## 🏗️ Stack Technique
-
-- **Frontend** : React, TypeScript, Tailwind CSS
-- **Timeline** : Konva / React-Konva
-- **Desktop** : Tauri (Backend Rust)
-- **State Management** : Zustand
-- **Icons** : Lucide React
+- Pistes d'évolution : [`propositions_fonctionnalites.md`](propositions_fonctionnalites.md), [`propositions_ameliorations.md`](propositions_ameliorations.md), [`propositions_design_ui_ux.md`](propositions_design_ui_ux.md), [`propositions_performances.md`](propositions_performances.md)
+- Journal de bord : [`rapport_erreurs_et_solutions.md`](rapport_erreurs_et_solutions.md)
 
 ---
 
 *Développé pour l'excellence dans le doublage professionnel.*
-
