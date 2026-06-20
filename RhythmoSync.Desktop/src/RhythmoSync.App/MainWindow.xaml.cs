@@ -1018,6 +1018,11 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            case Key.M when ctrl:
+                MergeSelectedBlocks();
+                e.Handled = true;
+                break;
+
             case Key.H when ctrl:
                 OnFindReplace(this, new RoutedEventArgs());
                 e.Handled = true;
@@ -1055,6 +1060,13 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    private void MergeSelectedBlocks()
+    {
+        StatusLeft.Text = _state.MergeSelected()
+            ? "Blocs fusionnés."
+            : "Sélectionnez deux blocs de la même piste pour les fusionner.";
     }
 
     private void NudgeSelection(double deltaSeconds)
