@@ -189,6 +189,14 @@ public sealed class ProjectState
         if (_selected.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
+    /// <summary>Vide tous les dialogues en un seul pas d'historique (annulable). No-op si déjà vide.</summary>
+    public void ClearAllDialogues()
+    {
+        if (_dialogues.Count == 0) return;
+        Commit([], snapshot: true);
+        if (_selected.Count > 0) { _selected.Clear(); SelectionChanged?.Invoke(); }
+    }
+
     public void GroupSelected()
     {
         if (_selected.Count < 2) return;

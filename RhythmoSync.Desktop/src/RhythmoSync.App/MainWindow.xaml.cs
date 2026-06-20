@@ -657,6 +657,23 @@ public partial class MainWindow : Window
             : $"« {dialog.Find} » introuvable.";
     }
 
+    private void OnClearAllDialogues(object sender, RoutedEventArgs e)
+    {
+        var count = _state.Dialogues.Count;
+        if (count == 0)
+        {
+            MessageBox.Show(this, "Aucun bloc à supprimer.",
+                "Tout supprimer", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (MessageBox.Show(this,
+                "Cette action supprimera tous les blocs de dialogue de la timeline. Cette opération peut être annulée (Ctrl+Z).",
+                "Supprimer tous les sous-titres ?", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        _state.ClearAllDialogues();
+        StatusLeft.Text = $"{count} bloc(s) supprimé(s).";
+    }
+
     // ── Import / export texte (SRT, VTT, TXT, CSV) ───────────────────────────
 
     private void OnExportText(object sender, RoutedEventArgs e)

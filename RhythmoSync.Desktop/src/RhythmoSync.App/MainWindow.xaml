@@ -41,6 +41,8 @@
                             ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
                     <Button x:Name="BlockEditorButton" Style="{StaticResource ToolButton}" Content="✏ Édition" Click="OnToggleBlockEditor"
                             ToolTip="Afficher / masquer le panneau d'édition du bloc sélectionné"/>
+                    <Button x:Name="ClearAllButton" Style="{StaticResource ToolButton}" Content="🗑 Tout supprimer" Click="OnClearAllDialogues"
+                            ToolTip="Supprimer tous les blocs de dialogue (annulable avec Ctrl+Z)"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
