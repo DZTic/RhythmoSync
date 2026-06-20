@@ -39,6 +39,10 @@
                             ToolTip="Décaler tous les blocs dans le temps"/>
                     <Button x:Name="FindReplaceButton" Style="{StaticResource ToolButton}" Content="🔍 Remplacer" Click="OnFindReplace"
                             ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
+                    <Button x:Name="AddMarkerButton" Style="{StaticResource ToolButton}" Content="🚩 Marqueur" Click="OnAddMarker"
+                            ToolTip="Poser un marqueur nommé à la tête de lecture"/>
+                    <Button x:Name="MarkersButton" Style="{StaticResource ToolButton}" Content="▾" Padding="6,2" Click="OnMarkersMenu"
+                            ToolTip="Liste des marqueurs : aller à, renommer, supprimer"/>
                     <Button x:Name="BlockEditorButton" Style="{StaticResource ToolButton}" Content="✏ Édition" Click="OnToggleBlockEditor"
                             ToolTip="Afficher / masquer le panneau d'édition du bloc sélectionné"/>
                     <Button x:Name="HistoryButton" Style="{StaticResource ToolButton}" Content="🕘 Historique" Click="OnToggleHistory"

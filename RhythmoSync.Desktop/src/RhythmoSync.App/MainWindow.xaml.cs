@@ -668,6 +668,60 @@ public partial class MainWindow : Window
             : $"« {dialog.Find} » introuvable.";
     }
 
+    // ── Marqueurs de timeline ─────────────────────────────────────────────────
+
+    private void OnAddMarker(object sender, RoutedEventArgs e)
+    {
+        var time = GetClockTime();
+        var defaultName = $"Marqueur {_state.Markers.Count + 1}";
+        var dlg = new Tools.TextPromptDialog(this, "Nouveau marqueur",
+            $"Nom du marqueur (à {FormatTimecode(time)}) :", defaultName);
+        if (dlg.ShowDialog() != true) return;
+        var label = string.IsNullOrWhiteSpace(dlg.Value) ? defaultName : dlg.Value;
+        _state.AddMarker(time, label);
+        StatusLeft.Text = $"Marqueur « {label} » ajouté.";
+    }
+
+    private void OnMarkersMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        if (_state.Markers.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Aucun marqueur", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var m in _state.Markers)
+            {
+                var captured = m;
+                var label = string.IsNullOrWhiteSpace(m.Label) ? "(sans nom)" : m.Label;
+                var item = new MenuItem { Header = $"{label}  —  {FormatTimecode(m.Time)}" };
+
+                var go = new MenuItem { Header = "Aller à ce marqueur" };
+                go.Click += (_, _) => SeekTo(captured.Time);
+                var rename = new MenuItem { Header = "Renommer…" };
+                rename.Click += (_, _) => RenameMarkerPrompt(captured);
+                var del = new MenuItem { Header = "Supprimer" };
+                del.Click += (_, _) => _state.RemoveMarker(captured.Id);
+
+                item.Items.Add(go);
+                item.Items.Add(rename);
+                item.Items.Add(del);
+                menu.Items.Add(item);
+            }
+        }
+        menu.PlacementTarget = MarkersButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void RenameMarkerPrompt(Marker marker)
+    {
+        var dlg = new Tools.TextPromptDialog(this, "Renommer le marqueur", "Nouveau nom :", marker.Label);
+        if (dlg.ShowDialog() != true) return;
+        _state.RenameMarker(marker.Id, dlg.Value);
+    }
+
     // ── Import / export texte (SRT, VTT, TXT, CSV) ───────────────────────────
 
     private void OnExportText(object sender, RoutedEventArgs e)

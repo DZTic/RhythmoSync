@@ -27,6 +27,8 @@ public sealed class ProjectState
     public event Action? ViewChanged;
     /// <summary>Déclenché quand une piste du mixeur audio change (volume, mute, solo, fichier…).</summary>
     public event Action? AudioTracksChanged;
+    /// <summary>Déclenché quand les marqueurs de timeline changent (ajout, renommage, suppression).</summary>
+    public event Action? MarkersChanged;
 
     // ── Mixeur audio ─────────────────────────────────────────────────────────
 
@@ -53,6 +55,41 @@ public sealed class ProjectState
         var anySolo = _audioTracks.Any(t => t.Solo);
         return track.Muted || (anySolo && !track.Solo) ? 0 : track.Volume;
     }
+
+    // ── Marqueurs de timeline ─────────────────────────────────────────────────
+
+    private List<Marker> _markers = [];
+
+    /// <summary>Marqueurs nommés, toujours triés par temps croissant.</summary>
+    public IReadOnlyList<Marker> Markers => _markers;
+
+    /// <summary>Ajoute un marqueur (temps borné à 0) et retourne son identifiant.</summary>
+    public string AddMarker(double time, string label)
+    {
+        var marker = new Marker { Time = Math.Max(0, time), Label = label ?? "" };
+        _markers = [.. _markers, marker];
+        SortMarkers();
+        MarkersChanged?.Invoke();
+        return marker.Id;
+    }
+
+    public void RemoveMarker(string id)
+    {
+        var next = _markers.Where(m => m.Id != id).ToList();
+        if (next.Count == _markers.Count) return;
+        _markers = next;
+        MarkersChanged?.Invoke();
+    }
+
+    public void RenameMarker(string id, string label)
+    {
+        var idx = _markers.FindIndex(m => m.Id == id);
+        if (idx < 0 || _markers[idx].Label == label) return;
+        _markers = _markers.Select(m => m.Id == id ? m with { Label = label ?? "" } : m).ToList();
+        MarkersChanged?.Invoke();
+    }
+
+    private void SortMarkers() => _markers.Sort((a, b) => a.Time.CompareTo(b.Time));
 
     // ── Paramètres de vue / réglages ─────────────────────────────────────────
 
@@ -302,6 +339,7 @@ public sealed class ProjectState
         Fps = Fps,
         VideoPath = VideoPath,
         AudioTracks = [.. _audioTracks],
+        Markers = [.. _markers],
     };
 
     public void ImportProject(ProjectFile file)
@@ -315,6 +353,10 @@ public sealed class ProjectState
         _audioTracks = file.AudioTracks is { Count: > 0 } tracks
             ? tracks.Select(t => t with { Volume = Math.Clamp(t.Volume, 0, 1) }).ToList()
             : DefaultAudioTracks();
+        _markers = file.Markers is { Count: > 0 } markers
+            ? markers.Select(m => m with { Time = Math.Max(0, m.Time) }).ToList()
+            : [];
+        SortMarkers();
         _past.Clear();
         _future.Clear();
         _selected.Clear();
@@ -322,6 +364,7 @@ public sealed class ProjectState
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();
         AudioTracksChanged?.Invoke();
+        MarkersChanged?.Invoke();
     }
 
     public void ResetProject()
@@ -332,6 +375,7 @@ public sealed class ProjectState
         Fps = 25;
         VideoPath = null;
         _audioTracks = DefaultAudioTracks();
+        _markers = [];
         _past.Clear();
         _future.Clear();
         _selected.Clear();
@@ -339,5 +383,6 @@ public sealed class ProjectState
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();
         AudioTracksChanged?.Invoke();
+        MarkersChanged?.Invoke();
     }
 }

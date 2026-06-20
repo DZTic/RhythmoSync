@@ -21,6 +21,9 @@ public sealed class ProjectFile
 
     /// <summary>Pistes du mixeur audio. Null dans les anciens fichiers → pistes par défaut.</summary>
     public List<AudioTrack>? AudioTracks { get; set; }
+
+    /// <summary>Marqueurs nommés de la timeline. Null/absent dans les anciens fichiers.</summary>
+    public List<Marker>? Markers { get; set; }
 }
 
 public static class ProjectIo
