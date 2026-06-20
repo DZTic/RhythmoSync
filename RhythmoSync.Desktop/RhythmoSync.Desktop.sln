@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhythmoSync.Media", "src\Rh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhythmoSync.App", "src\RhythmoSync.App\RhythmoSync.App.csproj", "{FA69944E-854E-4588-AEE8-26E11E4ADFF9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhythmoSync.Core.Tests", "src\RhythmoSync.Core.Tests\RhythmoSync.Core.Tests.csproj", "{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,10 +34,15 @@ Global
 		{FA69944E-854E-4588-AEE8-26E11E4ADFF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FA69944E-854E-4588-AEE8-26E11E4ADFF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FA69944E-854E-4588-AEE8-26E11E4ADFF9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{56541198-6DDF-48F7-9C2D-4548B49C64FC} = {B1AE59D5-C572-4B21-9592-EFF9DE312F18}
 		{29B88C09-1B34-4571-BE56-57E30451F159} = {B1AE59D5-C572-4B21-9592-EFF9DE312F18}
 		{FA69944E-854E-4588-AEE8-26E11E4ADFF9} = {B1AE59D5-C572-4B21-9592-EFF9DE312F18}
+		{43EC9C4A-2D65-4E4E-8577-3973CF1E2ED6} = {B1AE59D5-C572-4B21-9592-EFF9DE312F18}
 	EndGlobalSection
 EndGlobal
