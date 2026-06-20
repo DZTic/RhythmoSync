@@ -32,3 +32,6 @@ dist-ssr
 *.pdb
 audit_report.txt
 target/
+
+# Generated knowledge-graph output (graphify skill)
+/graphify-out/
