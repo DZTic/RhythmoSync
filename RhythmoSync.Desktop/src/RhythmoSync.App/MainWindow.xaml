@@ -23,6 +23,7 @@
                     <Button x:Name="OpenButton" Style="{StaticResource ToolButton}" Content="Ouvrir…" Click="OnOpenProject"/>
                     <Button x:Name="RecentButton" Style="{StaticResource ToolButton}" Content="Récents ▾" Click="OnRecentProjects" ToolTip="Projets récemment ouverts"/>
                     <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Content="Enregistrer" Click="OnSaveProject"/>
+                    <Button x:Name="VersionsButton" Style="{StaticResource ToolButton}" Content="🕓 Versions ▾" Click="OnVersions" ToolTip="Restaurer une sauvegarde automatique"/>
                     <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
                     <Button x:Name="ImportVideoButton" Style="{StaticResource AccentButton}" Content="🎬 Importer une vidéo" Click="OnImportVideo"/>
                     <Button x:Name="AddBlockButton" Style="{StaticResource ToolButton}" Content="＋ Bloc" Click="OnAddBlock"

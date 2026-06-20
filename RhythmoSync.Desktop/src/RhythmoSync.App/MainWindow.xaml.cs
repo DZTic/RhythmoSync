@@ -18,6 +18,9 @@ public partial class MainWindow : Window
 {
     private readonly ProjectState _state = new();
     private readonly RecentProjectsStore _recent = new();
+    private readonly BackupManager _backup = new();
+    private DispatcherTimer? _backupTimer;
+    private bool _modifiedSinceBackup;
 
     // ── Horloge de lecture ────────────────────────────────────────────────────
     // MediaElement.Position ne se met à jour que par paliers ; comme dans la
@@ -115,11 +118,23 @@ public partial class MainWindow : Window
             };
         }
 
+        // Sauvegardes automatiques : marque « modifié » à chaque changement,
+        // écrit une version horodatée à intervalle régulier si nécessaire.
+        _state.DialoguesChanged += () => _modifiedSinceBackup = true;
+        _state.AudioTracksChanged += () => _modifiedSinceBackup = true;
+        _backupTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(Backups.DefaultIntervalMinutes),
+        };
+        _backupTimer.Tick += OnBackupTick;
+        _backupTimer.Start();
+
         PreviewKeyDown += OnWindowKeyDown;
         CompositionTarget.Rendering += OnRendering;
         Closed += (_, _) =>
         {
             CompositionTarget.Rendering -= OnRendering;
+            _backupTimer?.Stop();
             _mixer?.Dispose();
         };
     }
@@ -413,6 +428,60 @@ public partial class MainWindow : Window
         OpenProjectFromPath(path);
     }
 
+    // ── Sauvegardes automatiques ──────────────────────────────────────────────
+
+    private void OnBackupTick(object? sender, EventArgs e)
+    {
+        if (!_modifiedSinceBackup || _state.Dialogues.Count == 0) return;
+        var baseName = _currentProjectPath is { } p
+            ? Path.GetFileNameWithoutExtension(p)
+            : "projet-sans-titre";
+        if (_backup.Write(_state.ToProjectFile(), baseName) is not null)
+            _modifiedSinceBackup = false;
+    }
+
+    private void OnVersions(object sender, RoutedEventArgs e)
+    {
+        var backups = _backup.List();
+        var menu = new ContextMenu();
+        if (backups.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Aucune sauvegarde automatique", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var entry in backups)
+            {
+                var captured = entry;
+                var item = new MenuItem { Header = entry.Display, ToolTip = entry.Path };
+                item.Click += (_, _) => RestoreBackup(captured);
+                menu.Items.Add(item);
+            }
+        }
+        menu.PlacementTarget = VersionsButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void RestoreBackup(BackupEntry entry)
+    {
+        if (MessageBox.Show(this,
+                $"Restaurer la sauvegarde du {entry.Display} ?\nLes modifications non enregistrées seront perdues.",
+                "Restaurer une version", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        try
+        {
+            _state.ImportProject(ProjectIo.Load(entry.Path));
+            _modifiedSinceBackup = false;
+            StatusLeft.Text = $"Version restaurée : {entry.Display}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Impossible de restaurer cette sauvegarde : " + ex.Message,
+                "Restaurer une version", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void OpenProjectFromPath(string fileName)
     {
         try
@@ -463,6 +532,7 @@ public partial class MainWindow : Window
             ProjectIo.Save(path, _state.ToProjectFile());
             _currentProjectPath = path;
             _recent.Add(path);
+            _modifiedSinceBackup = false; // l'enregistrement réel est aussi un point de reprise
             StatusLeft.Text = $"Projet enregistré : {Path.GetFileName(path)}";
         }
         catch (Exception ex)
