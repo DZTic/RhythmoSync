@@ -214,6 +214,20 @@ public sealed class ProjectState
     }
 
     /// <summary>
+    /// Bascule l'état verrouillé des blocs sélectionnés : si au moins un est
+    /// déverrouillé, tous passent verrouillés ; sinon tous sont déverrouillés. Annulable.
+    /// </summary>
+    /// <returns>Le nouvel état verrouillé appliqué, ou null si rien n'est sélectionné.</returns>
+    public bool? ToggleLockSelected()
+    {
+        if (_selected.Count == 0) return null;
+        var set = _selected.ToHashSet();
+        var locked = _dialogues.Any(d => set.Contains(d.Id) && !d.IsLocked);
+        Commit(_dialogues.Select(d => set.Contains(d.Id) ? d with { IsLocked = locked } : d).ToList(), snapshot: true);
+        return locked;
+    }
+
+    /// <summary>
     /// Vrai si exactement deux blocs de la même piste sont sélectionnés : seul cas
     /// où <see cref="MergeSelected"/> peut fusionner. Pilote l'activation de l'action UI.
     /// </summary>

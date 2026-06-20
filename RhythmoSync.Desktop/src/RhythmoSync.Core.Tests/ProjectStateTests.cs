@@ -288,6 +288,60 @@ public class ProjectStateTests
         Assert.Equal(2, s.Dialogues.Count);
     }
 
+    // ── Verrouillage de blocs ────────────────────────────────────────────────
+
+    [Fact]
+    public void ToggleLockSelected_LocksThenUnlocks()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a"), Block("b")]);
+        s.SelectBlock("a");
+
+        Assert.Equal(true, s.ToggleLockSelected());
+        Assert.True(s.Dialogues.First(d => d.Id == "a").IsLocked);
+        Assert.False(s.Dialogues.First(d => d.Id == "b").IsLocked);
+
+        Assert.Equal(false, s.ToggleLockSelected());
+        Assert.False(s.Dialogues.First(d => d.Id == "a").IsLocked);
+    }
+
+    [Fact]
+    public void ToggleLockSelected_MixedSelection_LocksAll()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([
+            new DialogueBlock { Id = "a", IsLocked = true },
+            new DialogueBlock { Id = "b", IsLocked = false },
+        ]);
+        s.SelectBlock("a");
+        s.SelectBlock("b", multi: true);
+
+        // Au moins un déverrouillé ⇒ tout devient verrouillé
+        Assert.Equal(true, s.ToggleLockSelected());
+        Assert.True(s.Dialogues.All(d => d.IsLocked));
+    }
+
+    [Fact]
+    public void ToggleLockSelected_ReturnsNullWhenNothingSelected()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a")]);
+        Assert.Null(s.ToggleLockSelected());
+    }
+
+    [Fact]
+    public void ToggleLockSelected_IsUndoable()
+    {
+        var s = new ProjectState();
+        s.SetDialogues([Block("a")]);
+        s.SelectBlock("a");
+        s.ToggleLockSelected();
+        Assert.True(s.Dialogues[0].IsLocked);
+
+        s.Undo();
+        Assert.False(s.Dialogues[0].IsLocked);
+    }
+
     // ── Outils timeline ──────────────────────────────────────────────────────
 
     [Fact]
