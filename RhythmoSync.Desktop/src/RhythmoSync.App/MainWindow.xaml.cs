@@ -1308,6 +1308,9 @@ public partial class MainWindow : Window
         }
         PresentationHint.Visibility = Visibility.Visible;
         Band.PresentationMode = true; // rendu épuré et lisible de la bande rythmo
+        // Blocs verrouillés en présentation : on désélectionne pour qu'aucun
+        // raccourci (Ctrl+flèches, Suppr) ne puisse les déplacer/supprimer.
+        _state.SelectBlock(null);
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
