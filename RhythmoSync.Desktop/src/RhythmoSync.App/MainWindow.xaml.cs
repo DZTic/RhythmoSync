@@ -788,10 +788,14 @@ public partial class MainWindow : Window
 
         _playKickTicks = 0; // garde-fou désarmé tant que la nouvelle source n'est pas ouverte
 
+        // En LoadedBehavior=Manual, fixer Source ne suffit PAS à charger le média :
+        // il faut une commande de lecture pour déclencher l'ouverture (sinon MediaOpened
+        // ne se déclenche jamais → « Chargement de la vidéo… » à l'infini). On force
+        // donc l'ouverture par Play()+Pause(). Le blocage éventuel du décodeur au vrai
+        // démarrage de lecture est traité par le garde-fou CheckPlaybackStall().
         Media.Source = new Uri(playbackPath);
-        // MediaOpened prend le relais (durée, waveform, première image). On ne touche
-        // PAS à Play()/Pause() ici : manipuler la lecture avant l'ouverture du média
-        // est une course qui pouvait laisser le décodeur figé (Lecture sans image).
+        Media.Play();
+        Media.Pause();
         UpdateStatusBar();
     }
 
