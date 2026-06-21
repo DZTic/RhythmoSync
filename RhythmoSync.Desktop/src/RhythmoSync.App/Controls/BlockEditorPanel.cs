@@ -28,7 +28,8 @@ public sealed class BlockEditorPanel : ScrollViewer
 
     private ProjectState? _state;
     private bool _loading;
-    private string? _focusSnapshotId; // bloc pour lequel un snapshot de focus est déjà pris
+    private string? _focusSnapshotId;   // bloc pour lequel un snapshot de focus est déjà pris
+    private string? _displayedBlockId;  // bloc actuellement reflété par les champs
 
     // ── Conteneurs ──
     private readonly StackPanel _fields = new();
@@ -249,21 +250,30 @@ public sealed class BlockEditorPanel : ScrollViewer
                 ? $"{s.SelectedIds.Count} blocs sélectionnés. Sélectionnez un seul bloc pour l'éditer."
                 : "Sélectionnez un bloc pour modifier son texte, son personnage, sa couleur, sa piste et sa durée.";
             _focusSnapshotId = null;
+            _displayedBlockId = null;
             return;
         }
 
         _fields.Visibility = Visibility.Visible;
         _hint.Visibility = Visibility.Collapsed;
 
+        // Si on bascule sur un AUTRE bloc, on réécrit tous les champs même celui qui a
+        // le focus : la protection « ne pas écraser le champ en cours de saisie » ne
+        // vaut que pour les rafraîchissements du même bloc (sinon le champ garderait la
+        // valeur de l'ancien bloc — p.ex. un n° de piste périmé).
+        var blockChanged = block.Id != _displayedBlockId;
+        _displayedBlockId = block.Id;
+
         _loading = true;
         try
         {
-            // Champs éditables : ne pas écraser celui qui a le focus (curseur/saisie)
-            if (!_textBox.IsKeyboardFocused) _textBox.Text = block.Text;
-            if (!_characterBox.IsKeyboardFocused) _characterBox.Text = block.CharacterName;
-            if (!_laneBox.IsKeyboardFocused) _laneBox.Text = (block.Lane + 1).ToString(CultureInfo.InvariantCulture);
-            if (!_durationBox.IsKeyboardFocused) _durationBox.Text = block.Duration.ToString("0.##", CultureInfo.InvariantCulture);
-            if (!_hexBox.IsKeyboardFocused) _hexBox.Text = block.Color;
+            // Champs éditables : ne pas écraser celui qui a le focus (curseur/saisie),
+            // sauf quand on vient de changer de bloc.
+            if (blockChanged || !_textBox.IsKeyboardFocused) _textBox.Text = block.Text;
+            if (blockChanged || !_characterBox.IsKeyboardFocused) _characterBox.Text = block.CharacterName;
+            if (blockChanged || !_laneBox.IsKeyboardFocused) _laneBox.Text = (block.Lane + 1).ToString(CultureInfo.InvariantCulture);
+            if (blockChanged || !_durationBox.IsKeyboardFocused) _durationBox.Text = block.Duration.ToString("0.##", CultureInfo.InvariantCulture);
+            if (blockChanged || !_hexBox.IsKeyboardFocused) _hexBox.Text = block.Color;
 
             // Reflets en lecture seule
             _headerSwatch.Background = BrushFromHex(block.Color);
