@@ -788,14 +788,25 @@ public partial class MainWindow : Window
 
         _playKickTicks = 0; // garde-fou désarmé tant que la nouvelle source n'est pas ouverte
 
-        // En LoadedBehavior=Manual, fixer Source ne suffit PAS à charger le média :
-        // il faut une commande de lecture pour déclencher l'ouverture (sinon MediaOpened
-        // ne se déclenche jamais → « Chargement de la vidéo… » à l'infini). On force
-        // donc l'ouverture par Play()+Pause(). Le blocage éventuel du décodeur au vrai
-        // démarrage de lecture est traité par le garde-fou CheckPlaybackStall().
-        Media.Source = new Uri(playbackPath);
-        Media.Play();
-        Media.Pause();
+        // Changer Source alors qu'une vidéo est DÉJÀ chargée ne redéclenche pas
+        // MediaOpened : la 2ᵉ vidéo restait bloquée sur « Chargement de la vidéo… ».
+        // Media.Stop() n'unload pas le média ; il faut Media.Close() pour le libérer,
+        // PUIS rebrancher la nouvelle source au cycle de dispatcher suivant (le moteur
+        // média doit avoir traité la fermeture avant de rouvrir).
+        Media.Close();
+
+        // En LoadedBehavior=Manual, fixer Source ne suffit pas à charger le média : il
+        // faut une commande de lecture (Play()+Pause()) pour déclencher l'ouverture,
+        // sinon MediaOpened ne se déclenche jamais. Le blocage éventuel du décodeur au
+        // vrai démarrage de lecture est traité par le garde-fou CheckPlaybackStall().
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_playbackPath != playbackPath) return; // un autre chargement a pris le relais
+            Media.Source = new Uri(playbackPath);
+            Media.Play();
+            Media.Pause();
+        }), DispatcherPriority.Loaded);
+
         UpdateStatusBar();
     }
 
