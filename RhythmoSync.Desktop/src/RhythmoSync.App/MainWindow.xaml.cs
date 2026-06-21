@@ -720,6 +720,17 @@ public partial class MainWindow : Window
     {
         _playbackPath = playbackPath;
         _mediaReady = false;
+
+        // Repart d'un état propre AVANT de brancher la nouvelle source. Sans ce reset,
+        // un état résiduel du MediaElement (vidéo précédente déjà ouverte, lecture en
+        // cours, _isPlaying resté à true) faisait parfois « coincer » la nouvelle vidéo :
+        // Lecture ne démarrait plus tant qu'on n'avait pas fermé/rouvert le projet.
+        Media.Stop();
+        _mixer?.Pause();
+        _isPlaying = false;
+        Band.IsPlaying = false;
+        PlayButton.Content = "▶  Lecture";
+
         Media.Source = new Uri(playbackPath);
         // MediaOpened prendra le relais (durée, waveform, première image)
         Media.Play();
