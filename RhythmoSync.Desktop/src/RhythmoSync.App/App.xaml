@@ -60,5 +60,98 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
+        <!-- ── Menus déroulants sombres (ContextMenu / MenuItem) ──────────────── -->
+
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="{StaticResource BgPanel}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="4">
+                            <StackPanel IsItemsHost="True" Grid.IsSharedSizeScope="True"
+                                        KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="4" SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Shortcut"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" ContentSource="Header"
+                                                  Margin="11,6,12,6" VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                                <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
+                                           Margin="0,0,10,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextMuted}"/>
+                                <Path x:Name="Arrow" Grid.Column="2" Data="M0,0 L4,4 L0,8 Z"
+                                      Fill="{StaticResource TextMuted}" VerticalAlignment="Center"
+                                      Margin="0,0,10,0" Visibility="Collapsed"/>
+                                <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Right"
+                                       HorizontalOffset="-3" VerticalOffset="-5" Focusable="False"
+                                       IsOpen="{TemplateBinding IsSubmenuOpen}" PopupAnimation="Fade">
+                                    <Border Background="{StaticResource BgPanel}"
+                                            BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                                            CornerRadius="6" Padding="4" Margin="0,0,8,8">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#000000" Opacity="0.45"
+                                                              BlurRadius="12" ShadowDepth="2"/>
+                                        </Border.Effect>
+                                        <StackPanel IsItemsHost="True" Grid.IsSharedSizeScope="True"
+                                                    KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Role" Value="SubmenuHeader">
+                                <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent}"/>
+                                <Setter TargetName="Arrow" Property="Fill" Value="{StaticResource TextPrimary}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                                <Setter Property="Opacity" Value="0.7"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Rectangle Height="1" Margin="8,4" Fill="{StaticResource BorderSubtle}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Application.Resources>
 </Application>
