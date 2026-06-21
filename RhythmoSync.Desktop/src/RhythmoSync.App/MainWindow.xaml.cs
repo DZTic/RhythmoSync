@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     private bool _isScrubbing;
     private double _scrubTime;
     private bool _scrubSeekPending;
-    private long _lastScrubSeekTicks;
+    private long _scrubLastChangeTicks;   // dernier changement de cible (pour l'aperçu « au repos »)
 
     // ── Mixeur audio multi-pistes ─────────────────────────────────────────────
     // La piste « Original » module le volume de MediaElement ; les pistes
@@ -159,15 +159,18 @@ public partial class MainWindow : Window
         double time;
         if (_isScrubbing)
         {
-            // L'affichage suit _scrubTime au pixel près (60 fps) ; le seek vidéo,
-            // lui, est limité à ~20/s pour ne pas bloquer le thread sur le décodage.
+            // L'affichage (bande, forme d'onde, timecode) suit _scrubTime au pixel
+            // près à 60 fps. Tant que la souris BOUGE, on ne lance AUCUN seek vidéo :
+            // le décodage (parfois lourd sur les formats long-GOP) bloquerait le
+            // thread UI et saccaderait le geste. L'aperçu vidéo n'est rafraîchi que
+            // lorsque le glissement se stabilise (~100 ms sans nouveau mouvement) ;
+            // le seek exact final a lieu au relâchement (OnScrubEnded).
             time = _scrubTime;
             if (_scrubSeekPending && _mediaReady)
             {
-                var now = Stopwatch.GetTimestamp();
-                if ((now - _lastScrubSeekTicks) / (double)Stopwatch.Frequency >= 0.05)
+                var idle = (Stopwatch.GetTimestamp() - _scrubLastChangeTicks) / (double)Stopwatch.Frequency;
+                if (idle >= 0.1)
                 {
-                    _lastScrubSeekTicks = now;
                     _scrubSeekPending = false;
                     Media.Position = TimeSpan.FromSeconds(_scrubTime);
                     _lastMediaPos = -1;
@@ -232,6 +235,7 @@ public partial class MainWindow : Window
         {
             _scrubTime = time;
             _scrubSeekPending = true;
+            _scrubLastChangeTicks = Stopwatch.GetTimestamp(); // réarme le délai d'aperçu
             return;
         }
 
@@ -244,6 +248,7 @@ public partial class MainWindow : Window
     {
         _scrubTime = GetClockTime();
         _scrubSeekPending = false;
+        _scrubLastChangeTicks = Stopwatch.GetTimestamp();
         _isScrubbing = true;
     }
 
