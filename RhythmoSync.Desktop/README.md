@@ -50,10 +50,20 @@ RhythmoSync.Desktop/
 ```powershell
 dotnet build RhythmoSync.Desktop.sln          # build debug
 dotnet run --project src/RhythmoSync.App      # lancer
-dotnet publish src/RhythmoSync.App -c Release -r win-x64 --self-contained false -o publish
+./publish.ps1                                 # exécutable portable → publish/
 ```
 
-Prérequis : .NET 8 SDK (runtime .NET 8 Desktop suffit pour exécuter le publish).
+`publish.ps1` produit un build **auto-contenu** (aucun runtime .NET requis) dans
+`publish/RhythmoSyncStudio-win-x64/` (+ le `.zip`). On lance `RhythmoSyncStudio.exe`
+**depuis ce dossier** (il a besoin des DLL voisines).
+
+Prérequis : .NET 8 SDK.
+
+> ⚠️ **Ne jamais publier en « fichier unique »** (`-p:PublishSingleFile=true`).
+> Dans un exe single-file, le `MediaElement` WPF n'initialise pas son moteur média
+> et **la vidéo refuse de jouer** (lecture sans image ni son). La publication se fait
+> donc en **dossier**, avec les DLL natives média/WPF (`PresentationNative_cor3.dll`,
+> `wpfgfx_cor3.dll`…) laissées externes — c'est ce que fait `publish.ps1`.
 
 ## Fonctionnalités (V1 « cœur »)
 
