@@ -33,6 +33,15 @@ public partial class MainWindow : Window
     private double _playbackRate = 1.0;
     private bool _mediaReady;
 
+    // ── Scrub (glissement sur la bande / la forme d'onde) ──────────────────────
+    // Pendant un scrub on pilote l'affichage directement depuis _scrubTime (suivi
+    // instantané de la souris) et on limite les seeks vidéo (coûteux) à ~20/s pour
+    // ne pas saturer le décodeur. Le seek exact final est appliqué au relâchement.
+    private bool _isScrubbing;
+    private double _scrubTime;
+    private bool _scrubSeekPending;
+    private long _lastScrubSeekTicks;
+
     // ── Mixeur audio multi-pistes ─────────────────────────────────────────────
     // La piste « Original » module le volume de MediaElement ; les pistes
     // externes (Voix, Bruitages…) sont des MediaPlayer asservis au transport.
@@ -73,6 +82,10 @@ public partial class MainWindow : Window
         Wave.Initialize(_state);
         Band.SeekRequested += SeekTo;
         Wave.SeekRequested += SeekTo;
+        Band.ScrubStarted += OnScrubStarted;
+        Band.ScrubEnded += OnScrubEnded;
+        Wave.ScrubStarted += OnScrubStarted;
+        Wave.ScrubEnded += OnScrubEnded;
         Band.EditRequested += BeginEditBlock;
 
         _state.DialoguesChanged += UpdateStatusBar;
@@ -143,7 +156,30 @@ public partial class MainWindow : Window
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        var time = GetClockTime();
+        double time;
+        if (_isScrubbing)
+        {
+            // L'affichage suit _scrubTime au pixel près (60 fps) ; le seek vidéo,
+            // lui, est limité à ~20/s pour ne pas bloquer le thread sur le décodage.
+            time = _scrubTime;
+            if (_scrubSeekPending && _mediaReady)
+            {
+                var now = Stopwatch.GetTimestamp();
+                if ((now - _lastScrubSeekTicks) / (double)Stopwatch.Frequency >= 0.05)
+                {
+                    _lastScrubSeekTicks = now;
+                    _scrubSeekPending = false;
+                    Media.Position = TimeSpan.FromSeconds(_scrubTime);
+                    _lastMediaPos = -1;
+                    _mixer?.Seek(_scrubTime);
+                }
+            }
+        }
+        else
+        {
+            time = GetClockTime();
+        }
+
         Band.UpdateTime(time);
         Wave.UpdateTime(time);
 
@@ -188,9 +224,38 @@ public partial class MainWindow : Window
     {
         if (!_mediaReady) return;
         time = Math.Clamp(time, 0, _duration);
+
+        // Pendant un scrub : on mémorise juste la cible (affichage immédiat via
+        // OnRendering) et on coalesce le seek vidéo, au lieu d'en déclencher un à
+        // chaque mouvement de souris — ce qui rendait le geste très lent.
+        if (_isScrubbing)
+        {
+            _scrubTime = time;
+            _scrubSeekPending = true;
+            return;
+        }
+
         Media.Position = TimeSpan.FromSeconds(time);
         _lastMediaPos = -1; // ré-ancrage de l'extrapolation à la prochaine frame
         _mixer?.Seek(time);
+    }
+
+    private void OnScrubStarted()
+    {
+        _scrubTime = GetClockTime();
+        _scrubSeekPending = false;
+        _isScrubbing = true;
+    }
+
+    private void OnScrubEnded()
+    {
+        _isScrubbing = false;
+        if (!_mediaReady) return;
+        // Seek exact sur la position finale (les seeks intermédiaires étaient limités).
+        var target = Math.Clamp(_scrubTime, 0, _duration);
+        Media.Position = TimeSpan.FromSeconds(target);
+        _lastMediaPos = -1;
+        _mixer?.Seek(target);
     }
 
     private void TogglePlay()

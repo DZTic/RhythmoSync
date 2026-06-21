@@ -46,7 +46,8 @@ public sealed class RhythmoBandControl : FrameworkElement
     private enum DragMode { None, Scrub, MoveBlock, ResizeLeft, ResizeRight }
     private DragMode _drag = DragMode.None;
     private Point _mouseDownPoint;
-    private double _lastScrubX;
+    private double _scrubAnchorX;       // X de la souris au début du scrub
+    private double _scrubAnchorTime;    // temps de lecture au début du scrub
     private string _dragBlockId = "";
     private double _grabOffsetTime;             // temps entre le curseur et le début du bloc
     private Dictionary<string, (double Start, int Lane)> _multiDragOrigin = [];
@@ -55,6 +56,8 @@ public sealed class RhythmoBandControl : FrameworkElement
     private bool _dragMoved;
 
     public event Action<double>? SeekRequested;
+    public event Action? ScrubStarted;
+    public event Action? ScrubEnded;
     public event Action<DialogueBlock, Rect>? EditRequested;
 
     public bool IsPlaying
@@ -268,10 +271,14 @@ public sealed class RhythmoBandControl : FrameworkElement
 
         if (block.Text.Length > 0)
         {
-            // Texte étiré horizontalement pour remplir exactement la largeur du bloc
-            // (même rendu que la version web : le texte "colle" au tempo du bloc).
+            // Texte TOUJOURS sur une seule ligne : les retours à la ligne (p.ex.
+            // issus de sous-titres importés sur deux lignes) sont remplacés par des
+            // espaces, puis le texte est étiré horizontalement pour remplir
+            // exactement la largeur du bloc (le texte "colle" au tempo du bloc).
             var fontSize = Math.Max(12, height * 0.6);
-            var text = MakeText(block.Text, fontSize, Brushes.White);
+            var oneLine = block.Text.ReplaceLineEndings(" ");
+            var text = MakeText(oneLine, fontSize, Brushes.White);
+            text.MaxLineCount = 1;
             var natural = text.WidthIncludingTrailingWhitespace;
             if (natural > 0.1)
             {
@@ -549,7 +556,9 @@ public sealed class RhythmoBandControl : FrameworkElement
 
         // Fond vide → scrub de la timeline (ou simple clic = saut)
         _drag = DragMode.Scrub;
-        _lastScrubX = p.X;
+        _scrubAnchorX = p.X;
+        _scrubAnchorTime = _time;
+        ScrubStarted?.Invoke();
         Cursor = Cursors.ScrollWE;
         CaptureMouse();
         e.Handled = true;
@@ -573,9 +582,9 @@ public sealed class RhythmoBandControl : FrameworkElement
         switch (_drag)
         {
             case DragMode.Scrub:
-                var deltaX = p.X - _lastScrubX;
-                _lastScrubX = p.X;
-                if (deltaX != 0) SeekRequested?.Invoke(_time - deltaX / _state.ZoomLevel);
+                // Ancrage absolu : la cible suit la souris au pixel près, sans dépendre
+                // de Media.Position (qui se met à jour lentement et freinait le geste).
+                SeekRequested?.Invoke(Math.Max(0, _scrubAnchorTime - (p.X - _scrubAnchorX) / _state.ZoomLevel));
                 break;
             case DragMode.MoveBlock:
                 HandleMoveDrag(p);
@@ -594,7 +603,8 @@ public sealed class RhythmoBandControl : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (_state is null) return;
 
-        if (_drag == DragMode.Scrub && !_dragMoved)
+        var wasScrub = _drag == DragMode.Scrub;
+        if (wasScrub && !_dragMoved)
         {
             // Clic simple : saute pour amener le point cliqué sous la ligne de synchro
             var timeDiff = (_mouseDownPoint.X - RhythmoConstants.SyncLinePositionX) / _state.ZoomLevel;
@@ -606,6 +616,7 @@ public sealed class RhythmoBandControl : FrameworkElement
         HideSnapIndicator();
         ReleaseMouseCapture();
         Cursor = Cursors.Arrow;
+        if (wasScrub) ScrubEnded?.Invoke();
     }
 
     private void HandleDoubleClick(Point p)

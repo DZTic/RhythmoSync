@@ -102,9 +102,13 @@ public sealed class BandStripRenderer : IBandStripSource
 
                 // Texte étiré sur la largeur du bloc (même rendu que l'écran),
                 // avec une pseudo-ombre (copie noire décalée) pour la lisibilité.
+                // Toujours sur une seule ligne : les retours à la ligne deviennent des espaces.
                 var fontSize = Math.Max(8, bh * 0.6);
-                var white = MakeText(block.Text, fontSize, Brushes.White);
-                var black = MakeText(block.Text, fontSize, Brushes.Black);
+                var oneLine = block.Text.ReplaceLineEndings(" ");
+                var white = MakeText(oneLine, fontSize, Brushes.White);
+                var black = MakeText(oneLine, fontSize, Brushes.Black);
+                white.MaxLineCount = 1;
+                black.MaxLineCount = 1;
                 var natural = white.WidthIncludingTrailingWhitespace;
                 if (natural < 0.1) continue;
 
