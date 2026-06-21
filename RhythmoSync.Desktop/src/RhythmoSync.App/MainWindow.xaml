@@ -19,40 +19,27 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <TextBlock Text="🎙️ RhythmoSync" Foreground="{StaticResource TextPrimary}"
                                FontWeight="Bold" FontSize="14" VerticalAlignment="Center" Margin="2,0,14,0"/>
-                    <Button x:Name="NewButton" Style="{StaticResource ToolButton}" Content="Nouveau" Click="OnNewProject"/>
-                    <Button x:Name="OpenButton" Style="{StaticResource ToolButton}" Content="Ouvrir…" Click="OnOpenProject"/>
-                    <Button x:Name="RecentButton" Style="{StaticResource ToolButton}" Content="Récents ▾" Click="OnRecentProjects" ToolTip="Projets récemment ouverts"/>
-                    <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Content="Enregistrer" Click="OnSaveProject"/>
-                    <Button x:Name="VersionsButton" Style="{StaticResource ToolButton}" Content="🕓 Versions ▾" Click="OnVersions" ToolTip="Restaurer une sauvegarde automatique"/>
+
+                    <!-- Menu Fichier : nouveau, ouvrir, récents, enregistrer, versions, export vidéo -->
+                    <Button x:Name="FichierMenuButton" Style="{StaticResource ToolButton}" Content="📁 Fichier ▾" Click="OnFichierMenu"
+                            ToolTip="Nouveau, ouvrir, récents, enregistrer, versions, exporter la vidéo"/>
                     <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
+
+                    <!-- Actions fréquentes, toujours visibles -->
                     <Button x:Name="ImportVideoButton" Style="{StaticResource AccentButton}" Content="🎬 Importer une vidéo" Click="OnImportVideo"/>
                     <Button x:Name="AddBlockButton" Style="{StaticResource ToolButton}" Content="＋ Bloc" Click="OnAddBlock"
                             ToolTip="Ajouter un bloc à la position de lecture (double-clic sur la bande aussi)"/>
-                    <Button x:Name="ExportVideoButton" Style="{StaticResource ToolButton}" Content="🎞 Exporter" Click="OnExportVideo"
-                            ToolTip="Exporter la vidéo avec la bande rythmo incrustée (MP4)"/>
-                    <Button x:Name="ExportTextButton" Style="{StaticResource ToolButton}" Content="📄 Texte…" Click="OnExportText"
-                            ToolTip="Exporter les dialogues en sous-titres ou transcript (SRT, VTT, TXT, CSV)"/>
-                    <Button x:Name="ImportSubtitleButton" Style="{StaticResource ToolButton}" Content="📥 Sous-titres…" Click="OnImportSubtitles"
-                            ToolTip="Importer des sous-titres (.srt, .vtt) comme blocs de dialogue"/>
-                    <Button x:Name="WhisperButton" Style="{StaticResource ToolButton}" Content="🪄 Whisper" Click="OnWhisper"
-                            ToolTip="Transcrire l'audio en blocs de dialogue (whisper.cpp, 100 % local)"/>
-                    <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
-                    <Button x:Name="ShiftButton" Style="{StaticResource ToolButton}" Content="↔ Décaler" Click="OnShiftTimeline"
-                            ToolTip="Décaler tous les blocs dans le temps"/>
-                    <Button x:Name="FindReplaceButton" Style="{StaticResource ToolButton}" Content="🔍 Remplacer" Click="OnFindReplace"
-                            ToolTip="Rechercher et remplacer dans les textes et noms de personnages (Ctrl+H)"/>
-                    <Button x:Name="AddMarkerButton" Style="{StaticResource ToolButton}" Content="🚩 Marqueur" Click="OnAddMarker"
-                            ToolTip="Poser un marqueur nommé à la tête de lecture"/>
-                    <Button x:Name="MarkersButton" Style="{StaticResource ToolButton}" Content="▾" Padding="6,2" Click="OnMarkersMenu"
-                            ToolTip="Liste des marqueurs : aller à, renommer, supprimer"/>
                     <Button x:Name="BlockEditorButton" Style="{StaticResource ToolButton}" Content="✏ Édition" Click="OnToggleBlockEditor"
                             ToolTip="Afficher / masquer le panneau d'édition du bloc sélectionné"/>
-                    <Button x:Name="HistoryButton" Style="{StaticResource ToolButton}" Content="🕘 Historique" Click="OnToggleHistory"
-                            ToolTip="Afficher / masquer le panneau d'historique (annuler / rétablir)"/>
-                    <Button x:Name="SettingsButton" Style="{StaticResource ToolButton}" Content="⚙ Réglages" Click="OnSettings"
-                            ToolTip="Réglages (durée par défaut, synchro), statistiques, réinitialiser la vue, tout effacer"/>
-                    <Button x:Name="PresentationButton" Style="{StaticResource ToolButton}" Content="⛶ Présentation" Click="OnPresentation"
-                            ToolTip="Mode Présentation / Doublage plein écran (F11 ; Échap pour quitter)"/>
+                    <Rectangle Width="1" Fill="{StaticResource BorderSubtle}" Margin="8,2"/>
+
+                    <!-- Menus regroupant les actions moins fréquentes -->
+                    <Button x:Name="OutilsMenuButton" Style="{StaticResource ToolButton}" Content="🛠 Outils ▾" Click="OnOutilsMenu"
+                            ToolTip="Décaler, rechercher/remplacer, marqueurs, transcription Whisper"/>
+                    <Button x:Name="TexteMenuButton" Style="{StaticResource ToolButton}" Content="📄 Texte / Sous-titres ▾" Click="OnTexteMenu"
+                            ToolTip="Exporter le texte, importer des sous-titres"/>
+                    <Button x:Name="AffichageMenuButton" Style="{StaticResource ToolButton}" Content="👁 Affichage ▾" Click="OnAffichageMenu"
+                            ToolTip="Historique, réglages, mode présentation"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
