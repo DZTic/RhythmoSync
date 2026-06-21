@@ -216,8 +216,12 @@ public partial class ExportDialog : Window
             ExportProgressBar.Value = 100;
             ProgressLeft.Text = "Terminé !";
             ProgressRight.Text = "";
-            MessageBox.Show(this, result + $"\n\nFichier : {saveDialog.FileName}",
-                "Export réussi", MessageBoxButton.OK, MessageBoxImage.Information);
+            // Le message d'export commence par « Export terminé : » ; on l'enlève car
+            // le titre de la boîte le porte déjà.
+            const string prefix = "Export terminé : ";
+            var summary = result.StartsWith(prefix) ? result[prefix.Length..] : result;
+            Dialogs.MessageDialog.Show(this, Dialogs.MessageKind.Success,
+                "Export terminé", summary, saveDialog.FileName);
         }
         catch (OperationCanceledException)
         {
@@ -227,8 +231,8 @@ public partial class ExportDialog : Window
         catch (Exception ex)
         {
             ProgressLeft.Text = "Échec de l'export.";
-            MessageBox.Show(this, "Erreur d'exportation : " + ex.Message,
-                "Export", MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.MessageDialog.Show(this, Dialogs.MessageKind.Error,
+                "Échec de l'export", ex.Message);
         }
         finally
         {

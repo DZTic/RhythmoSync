@@ -1,0 +1,74 @@
+<Window x:Class="RhythmoSync.App.Dialogs.MessageDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        KeyboardNavigation.TabNavigation="Cycle"
+        MouseLeftButtonDown="OnDragMove">
+
+    <!-- Carte sombre arrondie avec liseré coloré selon le type de message.
+         La marge laisse la place à l'ombre portée (fenêtre transparente). -->
+    <Border CornerRadius="12" Background="{StaticResource BgPanel}"
+            BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+            Margin="14" SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="6" Opacity="0.55"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Liseré d'accent (couleur du type) -->
+            <Border x:Name="AccentStripe" Grid.Column="0" CornerRadius="12,0,0,12"/>
+
+            <StackPanel Grid.Column="1" Margin="22,20,20,18">
+
+                <!-- En-tête : pastille glyphe + titre -->
+                <DockPanel LastChildFill="True">
+                    <Border x:Name="IconBadge" DockPanel.Dock="Left"
+                            Width="40" Height="40" CornerRadius="20" Margin="0,0,14,0"
+                            VerticalAlignment="Top">
+                        <TextBlock x:Name="IconGlyph" Text="✓" FontSize="20" FontWeight="Bold"
+                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock x:Name="TitleText" Text="Titre" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <!-- Message -->
+                <TextBlock x:Name="MessageText" Margin="0,14,0,0" FontSize="13" LineHeight="20"
+                           Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+
+                <!-- Puce fichier (optionnelle) : chemin en monospace + bouton dossier -->
+                <Border x:Name="FileChip" Visibility="Collapsed" Margin="0,14,0,0"
+                        Background="{StaticResource BgDeep}" CornerRadius="8"
+                        BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" Padding="10,8">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock Text="📄" FontSize="14" DockPanel.Dock="Left" Margin="0,0,8,0"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock x:Name="FileNameText" FontFamily="Consolas" FontSize="12"
+                                   Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   ToolTipService.InitialShowDelay="200"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- Boutons -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                    <Button x:Name="RevealButton" Style="{StaticResource ToolButton}"
+                            Content="📂  Ouvrir le dossier" Padding="14,7" Visibility="Collapsed"
+                            Click="OnReveal"/>
+                    <Button x:Name="OkButton" Style="{StaticResource AccentButton}"
+                            Content="OK" Padding="22,7" IsDefault="True" IsCancel="True" Click="OnOk"/>
+                </StackPanel>
+
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

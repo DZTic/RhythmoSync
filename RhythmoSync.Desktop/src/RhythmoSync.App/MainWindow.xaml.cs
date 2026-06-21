@@ -1296,6 +1296,7 @@ public partial class MainWindow : Window
             el.Visibility = Visibility.Collapsed;
         }
         PresentationHint.Visibility = Visibility.Visible;
+        Band.PresentationMode = true; // rendu épuré et lisible de la bande rythmo
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -1309,6 +1310,7 @@ public partial class MainWindow : Window
         if (!_isPresenting) return;
         _isPresenting = false;
 
+        Band.PresentationMode = false;
         foreach (var (el, visibility) in _prePresentVisibility)
             el.Visibility = visibility;
         _prePresentVisibility.Clear();

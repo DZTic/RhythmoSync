@@ -24,6 +24,7 @@ public sealed class RhythmoBandControl : FrameworkElement
     private ProjectState _state = null!;
     private readonly VisualCollection _children;
     private readonly DrawingVisual _background = new();
+    private readonly DrawingVisual _readingZone = new();
     private readonly ContainerVisual _movingRoot = new();
     private readonly DrawingVisual _ruler = new();
     private readonly DrawingVisual _markersVisual = new();
@@ -37,6 +38,31 @@ public sealed class RhythmoBandControl : FrameworkElement
     private double _time;
     private double _pixelsPerDip = 1.0;
     private bool _isPlaying;
+    private bool _presentationMode;
+
+    /// <summary>
+    /// Mode lecture/doublage : rendu « propre » des blocs (pas d'alerte rouge ni de
+    /// poignées d'édition), texte plus grand avec ombre, repère couleur du personnage,
+    /// et zone de lecture mise en valeur sous la ligne de synchro. À activer en plein
+    /// écran de présentation pour un affichage lisible et professionnel.
+    /// </summary>
+    public bool PresentationMode
+    {
+        get => _presentationMode;
+        set
+        {
+            if (_presentationMode == value) return;
+            _presentationMode = value;
+            // Re-rendu de tous les blocs avec le style adéquat : on démonte les visuels
+            // cachés pour qu'ils soient recréés par la prochaine passe de virtualisation.
+            foreach (var v in _blockVisuals.Values) _movingRoot.Children.Remove(v);
+            _blockVisuals.Clear();
+            RedrawBackground();
+            RedrawReadingZone();
+            RedrawSyncOverlay();
+            UpdateTime(_time);
+        }
+    }
 
     // Ruler cache (régénéré uniquement quand la fenêtre visible change de tick)
     private long _rulerFirstTick = long.MinValue;
@@ -78,6 +104,7 @@ public sealed class RhythmoBandControl : FrameworkElement
         _movingRoot.Children.Add(_snapIndicator);
 
         _children.Add(_background);
+        _children.Add(_readingZone);
         _children.Add(_movingRoot);
         _children.Add(_syncOverlay);
 
@@ -85,9 +112,10 @@ public sealed class RhythmoBandControl : FrameworkElement
         {
             _pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             RedrawBackground();
+            RedrawReadingZone();
             RedrawSyncOverlay();
         };
-        SizeChanged += (_, _) => { RedrawBackground(); RedrawSyncOverlay(); InvalidateRuler(); };
+        SizeChanged += (_, _) => { RedrawBackground(); RedrawReadingZone(); RedrawSyncOverlay(); InvalidateRuler(); };
     }
 
     public void Initialize(ProjectState state)
@@ -100,6 +128,7 @@ public sealed class RhythmoBandControl : FrameworkElement
             InvalidateMeasure();
             InvalidateRuler();
             RedrawBackground();
+            RedrawReadingZone();
             RedrawSyncOverlay();
             RedrawMarkers();
             UpdateTime(_time);
@@ -163,7 +192,10 @@ public sealed class RhythmoBandControl : FrameworkElement
             var selected = _state.IsSelected(block.Id);
 
             if (visual.NeedsRender(block, width, laneHeight, selected, _isPlaying))
-                RenderBlock(visual, block, width, laneHeight, selected);
+            {
+                if (_presentationMode) RenderBlockPresentation(visual, block, width, laneHeight);
+                else RenderBlock(visual, block, width, laneHeight, selected);
+            }
 
             visual.Position.X = block.StartTime * pps;
             visual.Position.Y = block.Lane * laneHeight;
@@ -243,8 +275,18 @@ public sealed class RhythmoBandControl : FrameworkElement
     private static readonly Pen HandleCircleStroke = FrozenPen(new Pen(Brushes.Black, 1));
     private static readonly SolidColorBrush LabelBrush = Frozen(new SolidColorBrush(Color.FromRgb(0xaa, 0xaa, 0xaa)));
 
+    // Ombre portée du texte en mode présentation : garantit la lisibilité du blanc
+    // quelle que soit la teinte du bloc.
+    private static readonly SolidColorBrush TextShadowBrush = Frozen(new SolidColorBrush(Color.FromArgb(0xcc, 0, 0, 0)));
+
     private static SolidColorBrush Frozen(SolidColorBrush brush) { brush.Freeze(); return brush; }
     private static Pen FrozenPen(Pen pen) { pen.Freeze(); return pen; }
+
+    private static Color ParseColor(string hex)
+    {
+        try { return (Color)ColorConverter.ConvertFromString(hex); }
+        catch { return Color.FromRgb(0x63, 0x66, 0xf1); }
+    }
 
     private void RenderBlock(BlockVisual visual, DialogueBlock block, double width, double laneHeight, bool selected)
     {
@@ -303,8 +345,90 @@ public sealed class RhythmoBandControl : FrameworkElement
         }
     }
 
+    /// <summary>
+    /// Rendu « présentation/doublage » d'un bloc : épuré et lisible. Pas d'alerte
+    /// rouge ni de poignées : fond teinté de la couleur du personnage, repère couleur
+    /// en bas (rail rythmo), nom du personnage discret, et texte blanc plus grand avec
+    /// ombre porté, étiré au tempo du bloc (le texte « colle » au rythme de la parole).
+    /// </summary>
+    private void RenderBlockPresentation(BlockVisual visual, DialogueBlock block, double width, double laneHeight)
+    {
+        var height = laneHeight - VPad * 2;
+        using var dc = visual.RenderOpen();
+
+        var color = ParseColor(block.Color);
+        var rect = new Rect(0, VPad, width, height);
+
+        // Fond calme teinté + bordure nette dans la couleur du personnage.
+        var fill = new SolidColorBrush(color) { Opacity = 0.20 }; fill.Freeze();
+        var border = new Pen(new SolidColorBrush(color) { Opacity = 0.9 }, 1.5); border.Freeze();
+        dc.DrawRoundedRectangle(fill, border, rect, 6, 6);
+
+        // Rail couleur du personnage en bas du bloc (signature visuelle de la rythmo).
+        if (width > 6)
+        {
+            var rail = new SolidColorBrush(color); rail.Freeze();
+            dc.DrawRoundedRectangle(rail, null, new Rect(0, VPad + height - 3, width, 3), 1.5, 1.5);
+        }
+
+        // Réserve une bande haute pour le nom du personnage si la piste est assez haute.
+        var hasName = block.CharacterName.Length > 0 && width > 44 && height >= 42;
+        var nameBand = hasName ? 15.0 : 0.0;
+        if (hasName)
+        {
+            var nameBrush = new SolidColorBrush(color); nameBrush.Freeze();
+            var name = MakeText(block.CharacterName.ToUpperInvariant(), 10, nameBrush);
+            name.MaxLineCount = 1;
+            name.MaxTextWidth = Math.Max(1, width - 12);
+            dc.DrawText(name, new Point(7, VPad + 2));
+        }
+
+        if (block.Text.Length > 0)
+        {
+            var textTop = VPad + nameBand;
+            var textArea = height - nameBand - 3; // -3 pour le rail
+            var fontSize = Math.Max(15, textArea * 0.62);
+            var oneLine = block.Text.ReplaceLineEndings(" ");
+            var white = MakeText(oneLine, fontSize, Brushes.White);
+            white.MaxLineCount = 1;
+            var shadow = MakeText(oneLine, fontSize, TextShadowBrush);
+            shadow.MaxLineCount = 1;
+
+            var natural = white.WidthIncludingTrailingWhitespace;
+            if (natural > 0.1)
+            {
+                var y = textTop + Math.Max(0, (textArea - white.Height) / 2);
+                dc.PushTransform(new ScaleTransform(width / natural, 1));
+                dc.DrawText(shadow, new Point(0.7, y + 1.0));
+                dc.DrawText(white, new Point(0, y));
+                dc.Pop();
+            }
+        }
+    }
+
     private FormattedText MakeText(string text, double size, Brush brush) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, BlockTypeface, size, brush, _pixelsPerDip);
+
+    /// <summary>
+    /// Colonne de lecture mise en valeur (mode présentation uniquement) : un dégradé
+    /// doux centré sur la ligne de synchro, dessiné derrière les blocs, qui éclaire le
+    /// texte au moment où il passe sous la ligne — comme un prompteur professionnel.
+    /// </summary>
+    private void RedrawReadingZone()
+    {
+        using var dc = _readingZone.RenderOpen();
+        if (!_presentationMode || _state is null || ActualWidth <= 0) return;
+
+        var x = RhythmoConstants.SyncLinePositionX;
+        var height = _state.TotalBandHeight;
+        const double w = 84;
+        var glow = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xff, 0xff, 0xff), 0));
+        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x24, 0xff, 0xff, 0xff), 0.5));
+        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xff, 0xff, 0xff), 1));
+        glow.Freeze();
+        dc.DrawRectangle(glow, null, new Rect(x - w / 2, 0, w, height));
+    }
 
     // ── Fond statique (lanes) + règle temporelle + ligne de synchro ──────────
 
@@ -315,6 +439,26 @@ public sealed class RhythmoBandControl : FrameworkElement
 
         var width = ActualWidth;
         var height = _state.TotalBandHeight;
+
+        if (_presentationMode)
+        {
+            // Fond plus profond, dégradé vertical doux : repose l'œil pour la lecture.
+            var bg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0x0b, 0x10, 0x1f), 0));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0x05, 0x08, 0x12), 1));
+            bg.Freeze();
+            dc.DrawRectangle(bg, null, new Rect(0, 0, width, height));
+
+            // Séparateurs de pistes discrets et continus (pas de pointillés d'édition).
+            var lane = FrozenPen(new Pen(new SolidColorBrush(Color.FromArgb(0x33, 0x4a, 0x55, 0x68)), 1));
+            for (var i = 1; i < _state.TotalLanes; i++)
+            {
+                var y = i * _state.LaneHeightPx;
+                dc.DrawLine(lane, new Point(0, y), new Point(width, y));
+            }
+            return;
+        }
+
         dc.DrawRectangle(Frozen(new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27))), null, new Rect(0, 0, width, height));
 
         var lanePen = FrozenPen(new Pen(new SolidColorBrush(Color.FromRgb(0x2d, 0x37, 0x48)), 1) { DashStyle = new DashStyle([6, 4], 0) });
@@ -336,16 +480,36 @@ public sealed class RhythmoBandControl : FrameworkElement
         var x = RhythmoConstants.SyncLinePositionX;
         var height = _state.TotalBandHeight;
         var red = Frozen(new SolidColorBrush(Color.FromRgb(0xef, 0x44, 0x44)));
-        dc.DrawLine(FrozenPen(new Pen(red, 2)), new Point(x, 0), new Point(x, height));
-        var arrow = new StreamGeometry();
-        using (var geo = arrow.Open())
+
+        if (_presentationMode)
         {
-            geo.BeginFigure(new Point(x - 6, 0), true, true);
-            geo.LineTo(new Point(x + 6, 0), false, false);
-            geo.LineTo(new Point(x, 10), false, false);
+            // Ligne de lecture nette avec halo : repère clair sans être agressif.
+            var halo = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0xef, 0x44, 0x44)));
+            dc.DrawRectangle(halo, null, new Rect(x - 2, 0, 4, height));
+            dc.DrawLine(FrozenPen(new Pen(red, 2.5)), new Point(x, 0), new Point(x, height));
         }
-        arrow.Freeze();
-        dc.DrawGeometry(red, null, arrow);
+        else
+        {
+            dc.DrawLine(FrozenPen(new Pen(red, 2)), new Point(x, 0), new Point(x, height));
+        }
+
+        // Repère triangulaire en haut (et en bas, en présentation) de la ligne.
+        dc.DrawGeometry(red, null, Triangle(x, 0, true));
+        if (_presentationMode) dc.DrawGeometry(red, null, Triangle(x, height, false));
+    }
+
+    private static StreamGeometry Triangle(double x, double y, bool pointingDown)
+    {
+        var tip = pointingDown ? y + 10 : y - 10;
+        var geo = new StreamGeometry();
+        using (var g = geo.Open())
+        {
+            g.BeginFigure(new Point(x - 6, y), true, true);
+            g.LineTo(new Point(x + 6, y), false, false);
+            g.LineTo(new Point(x, tip), false, false);
+        }
+        geo.Freeze();
+        return geo;
     }
 
     /// <summary>
