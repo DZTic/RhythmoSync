@@ -33,6 +33,10 @@ public partial class MainWindow : Window
     private double _playbackRate = 1.0;
     private bool _mediaReady;
 
+    // Marge maximale d'extrapolation de l'horloge au-delà du dernier palier réel de
+    // Media.Position : empêche la timeline de s'emballer quand la vidéo se fige.
+    private const double MaxExtrapolationSeconds = 0.5;
+
     // ── Scrub (glissement sur la bande / la forme d'onde) ──────────────────────
     // Pendant un scrub on pilote l'affichage directement depuis _scrubTime (suivi
     // instantané de la souris) et on limite les seeks vidéo (coûteux) à ~20/s pour
@@ -207,7 +211,14 @@ public partial class MainWindow : Window
         }
         var time = mediaPos;
         if (_isPlaying)
-            time += (now - _anchorTicks) / (double)Stopwatch.Frequency * _playbackRate;
+        {
+            // Extrapolation entre deux paliers de Media.Position pour un défilement
+            // fluide. Bornée : si la vidéo se fige (décodeur en retard), Media.Position
+            // cesse d'avancer ; sans borne, la timeline s'emballerait devant l'image.
+            // La marge couvre l'écart normal entre paliers, mais empêche l'emballement.
+            var extrapolated = (now - _anchorTicks) / (double)Stopwatch.Frequency * _playbackRate;
+            time += Math.Min(extrapolated, MaxExtrapolationSeconds);
+        }
         return Math.Clamp(time, 0, _duration > 0 ? _duration : double.MaxValue);
     }
 
