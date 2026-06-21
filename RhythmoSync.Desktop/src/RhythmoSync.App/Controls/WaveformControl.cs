@@ -30,11 +30,14 @@ public sealed class WaveformControl : FrameworkElement
     private double _renderedPps = -1;
 
     private bool _scrubbing;
-    private double _lastScrubX;
+    private double _scrubAnchorX;
+    private double _scrubAnchorTime;
     private Point _mouseDownPoint;
     private bool _dragMoved;
 
     public event Action<double>? SeekRequested;
+    public event Action? ScrubStarted;
+    public event Action? ScrubEnded;
 
     public WaveformControl()
     {
@@ -181,7 +184,9 @@ public sealed class WaveformControl : FrameworkElement
         _scrubbing = true;
         _dragMoved = false;
         _mouseDownPoint = e.GetPosition(this);
-        _lastScrubX = _mouseDownPoint.X;
+        _scrubAnchorX = _mouseDownPoint.X;
+        _scrubAnchorTime = _time;
+        ScrubStarted?.Invoke();
         Cursor = Cursors.ScrollWE;
         CaptureMouse();
         e.Handled = true;
@@ -193,9 +198,8 @@ public sealed class WaveformControl : FrameworkElement
         if (!_scrubbing || _state is null) return;
         var p = e.GetPosition(this);
         if (Math.Abs(p.X - _mouseDownPoint.X) > 4) _dragMoved = true;
-        var deltaX = p.X - _lastScrubX;
-        _lastScrubX = p.X;
-        if (deltaX != 0) SeekRequested?.Invoke(_time - deltaX / _state.ZoomLevel);
+        // Ancrage absolu : suivi 1:1 de la souris, indépendant de Media.Position.
+        SeekRequested?.Invoke(Math.Max(0, _scrubAnchorTime - (p.X - _scrubAnchorX) / _state.ZoomLevel));
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -206,8 +210,10 @@ public sealed class WaveformControl : FrameworkElement
             var timeDiff = (_mouseDownPoint.X - RhythmoConstants.SyncLinePositionX) / _state.ZoomLevel;
             SeekRequested?.Invoke(_time + timeDiff);
         }
+        var wasScrub = _scrubbing;
         _scrubbing = false;
         ReleaseMouseCapture();
         Cursor = Cursors.Arrow;
+        if (wasScrub) ScrubEnded?.Invoke();
     }
 }
