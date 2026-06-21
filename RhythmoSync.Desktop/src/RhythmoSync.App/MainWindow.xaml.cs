@@ -222,7 +222,13 @@ public partial class MainWindow : Window
             _anchorTicks = now;
         }
         var time = mediaPos;
-        if (_isPlaying)
+        // On n'extrapole PAS tant que la lecture n'a pas confirmé qu'elle avance
+        // (_playKickTicks != 0 = on attend le premier palier après Play). Sinon, à la
+        // reprise, l'extrapolation court devant la position réelle pendant la latence
+        // variable du décodeur, puis « revient » d'un coup quand Media.Position se met
+        // à jour → saccade intermittente. On affiche donc la position brute jusqu'à ce
+        // que le décodeur reparte vraiment, puis on reprend le lissage par extrapolation.
+        if (_isPlaying && _playKickTicks == 0)
         {
             // Extrapolation entre deux paliers de Media.Position pour un défilement
             // fluide. Bornée : si la vidéo se fige (décodeur en retard), Media.Position
