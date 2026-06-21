@@ -37,6 +37,17 @@ public partial class MainWindow : Window
     // Media.Position : empêche la timeline de s'emballer quand la vidéo se fige.
     private const double MaxExtrapolationSeconds = 0.5;
 
+    // ── Garde-fou de démarrage de lecture ─────────────────────────────────────
+    // Sur certaines vidéos, après « Lecture », le décodeur WPF accepte Play() mais
+    // ne produit jamais d'image : Media.Position reste figé à 0, la timeline avance
+    // de la seule extrapolation (~0,5 s) puis se bloque. Il fallait fermer/rouvrir le
+    // projet. On détecte ce blocage (Position qui n'avance pas) et on relance le
+    // décodeur automatiquement par un petit re-seek + Play.
+    private long _playKickTicks;     // instant du démarrage de lecture (0 = garde-fou désarmé)
+    private double _playKickPos;     // Media.Position au démarrage
+    private int _playKickAttempts;   // relances déjà tentées
+    private const double PlayStallSeconds = 0.4;
+
     // ── Scrub (glissement sur la bande / la forme d'onde) ──────────────────────
     // Pendant un scrub on pilote l'affichage directement depuis _scrubTime (suivi
     // instantané de la souris) et on limite les seeks vidéo (coûteux) à ~20/s pour
@@ -185,6 +196,7 @@ public partial class MainWindow : Window
         else
         {
             time = GetClockTime();
+            CheckPlaybackStall();
         }
 
         Band.UpdateTime(time);
@@ -220,6 +232,43 @@ public partial class MainWindow : Window
             time += Math.Min(extrapolated, MaxExtrapolationSeconds);
         }
         return Math.Clamp(time, 0, _duration > 0 ? _duration : double.MaxValue);
+    }
+
+    /// <summary>
+    /// Garde-fou : après « Lecture », si le décodeur WPF reste figé (Media.Position
+    /// n'avance pas), on le relance par un petit re-seek + Play, au lieu d'exiger une
+    /// fermeture/réouverture du projet. Dès que la position progresse, le garde-fou
+    /// se désarme tout seul (cas normal : aucune action).
+    /// </summary>
+    private void CheckPlaybackStall()
+    {
+        if (!_isPlaying || _playKickTicks == 0 || !_mediaReady) return;
+
+        var pos = Media.Position.TotalSeconds;
+        if (pos > _playKickPos + 0.001)
+        {
+            _playKickTicks = 0; // lecture confirmée → garde-fou désarmé
+            return;
+        }
+
+        var stalled = (Stopwatch.GetTimestamp() - _playKickTicks) / (double)Stopwatch.Frequency;
+        if (stalled < PlayStallSeconds) return; // laisse le temps normal de démarrage du décodeur
+
+        if (_playKickAttempts < 2)
+        {
+            _playKickAttempts++;
+            // Re-seek sur la position courante : force le décodeur à vider/remplir son
+            // tampon, ce qui débloque un MediaElement resté coincé au démarrage.
+            Media.Position = TimeSpan.FromSeconds(pos);
+            _lastMediaPos = -1; // ré-ancrage de l'extrapolation
+            Media.Play();
+            _mixer?.Seek(pos);
+            _playKickTicks = Stopwatch.GetTimestamp();
+        }
+        else
+        {
+            _playKickTicks = 0; // abandon après 2 relances : on laisse la lecture en l'état
+        }
     }
 
     private string FormatTimecode(double seconds)
@@ -282,6 +331,7 @@ public partial class MainWindow : Window
             Media.Pause();
             _mixer?.Pause();
             _isPlaying = false;
+            _playKickTicks = 0; // garde-fou désarmé
         }
         else
         {
@@ -289,6 +339,10 @@ public partial class MainWindow : Window
             Media.Play();
             _mixer?.Play();
             _isPlaying = true;
+            // Arme le garde-fou : si Media.Position n'avance pas, OnRendering relancera.
+            _playKickPos = Media.Position.TotalSeconds;
+            _playKickTicks = Stopwatch.GetTimestamp();
+            _playKickAttempts = 0;
         }
         Band.IsPlaying = _isPlaying;
         PlayButton.Content = _isPlaying ? "⏸  Pause" : "▶  Lecture";
@@ -313,6 +367,7 @@ public partial class MainWindow : Window
     private void OnMediaEnded(object sender, RoutedEventArgs e)
     {
         _isPlaying = false;
+        _playKickTicks = 0; // garde-fou désarmé
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
         Media.Pause();
@@ -731,10 +786,12 @@ public partial class MainWindow : Window
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
 
+        _playKickTicks = 0; // garde-fou désarmé tant que la nouvelle source n'est pas ouverte
+
         Media.Source = new Uri(playbackPath);
-        // MediaOpened prendra le relais (durée, waveform, première image)
-        Media.Play();
-        Media.Pause();
+        // MediaOpened prend le relais (durée, waveform, première image). On ne touche
+        // PAS à Play()/Pause() ici : manipuler la lecture avant l'ouverture du média
+        // est une course qui pouvait laisser le décodeur figé (Lecture sans image).
         UpdateStatusBar();
     }
 
