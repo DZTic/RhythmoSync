@@ -390,30 +390,90 @@ public partial class MainWindow : Window
         OpenProjectFromPath(dialog.FileName);
     }
 
-    private void OnRecentProjects(object sender, RoutedEventArgs e)
+    // ── Menus déroulants de la barre d'outils ─────────────────────────────────
+
+    private static void AddItem(ItemCollection items, string header, RoutedEventHandler handler)
     {
-        var menu = new ContextMenu();
-        if (_recent.Paths.Count == 0)
-        {
-            menu.Items.Add(new MenuItem { Header = "Aucun projet récent", IsEnabled = false });
-        }
-        else
-        {
-            foreach (var path in _recent.Paths)
-            {
-                var captured = path;
-                var item = new MenuItem { Header = Path.GetFileName(path), ToolTip = path };
-                item.Click += (_, _) => OpenRecent(captured);
-                menu.Items.Add(item);
-            }
-            menu.Items.Add(new Separator());
-            var clear = new MenuItem { Header = "Effacer la liste" };
-            clear.Click += (_, _) => _recent.Clear();
-            menu.Items.Add(clear);
-        }
-        menu.PlacementTarget = RecentButton;
+        var item = new MenuItem { Header = header };
+        item.Click += handler;
+        items.Add(item);
+    }
+
+    private static void ShowDropDown(ContextMenu menu, object placementTarget)
+    {
+        menu.PlacementTarget = placementTarget as UIElement;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
+    }
+
+    private void OnFichierMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        AddItem(menu.Items, "Nouveau projet", OnNewProject);
+        AddItem(menu.Items, "Ouvrir…", OnOpenProject);
+        var recents = new MenuItem { Header = "Projets récents" };
+        PopulateRecentMenu(recents.Items);
+        menu.Items.Add(recents);
+        menu.Items.Add(new Separator());
+        AddItem(menu.Items, "Enregistrer", OnSaveProject);
+        var versions = new MenuItem { Header = "🕓 Versions (sauvegardes auto)" };
+        PopulateVersionsMenu(versions.Items);
+        menu.Items.Add(versions);
+        menu.Items.Add(new Separator());
+        AddItem(menu.Items, "🎞 Exporter la vidéo (MP4)…", OnExportVideo);
+        ShowDropDown(menu, sender);
+    }
+
+    private void OnOutilsMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        AddItem(menu.Items, "↔ Décaler les blocs…", OnShiftTimeline);
+        AddItem(menu.Items, "🔍 Rechercher / Remplacer…  (Ctrl+H)", OnFindReplace);
+        menu.Items.Add(new Separator());
+        AddItem(menu.Items, "🚩 Poser un marqueur", OnAddMarker);
+        var markers = new MenuItem { Header = "🚩 Liste des marqueurs" };
+        PopulateMarkersMenu(markers.Items);
+        menu.Items.Add(markers);
+        menu.Items.Add(new Separator());
+        AddItem(menu.Items, "🪄 Whisper — transcription…", OnWhisper);
+        ShowDropDown(menu, sender);
+    }
+
+    private void OnTexteMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        AddItem(menu.Items, "📄 Exporter le texte (SRT, VTT, TXT, CSV)…", OnExportText);
+        AddItem(menu.Items, "📥 Importer des sous-titres (.srt, .vtt)…", OnImportSubtitles);
+        ShowDropDown(menu, sender);
+    }
+
+    private void OnAffichageMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        AddItem(menu.Items, "🕘 Historique (annuler / rétablir)", OnToggleHistory);
+        AddItem(menu.Items, "⚙ Réglages…", OnSettings);
+        AddItem(menu.Items, "⛶ Mode Présentation  (F11)", OnPresentation);
+        ShowDropDown(menu, sender);
+    }
+
+    private void PopulateRecentMenu(ItemCollection items)
+    {
+        if (_recent.Paths.Count == 0)
+        {
+            items.Add(new MenuItem { Header = "Aucun projet récent", IsEnabled = false });
+            return;
+        }
+        foreach (var path in _recent.Paths)
+        {
+            var captured = path;
+            var item = new MenuItem { Header = Path.GetFileName(path), ToolTip = path };
+            item.Click += (_, _) => OpenRecent(captured);
+            items.Add(item);
+        }
+        items.Add(new Separator());
+        var clear = new MenuItem { Header = "Effacer la liste" };
+        clear.Click += (_, _) => _recent.Clear();
+        items.Add(clear);
     }
 
     private void OpenRecent(string path)
@@ -440,27 +500,21 @@ public partial class MainWindow : Window
             _modifiedSinceBackup = false;
     }
 
-    private void OnVersions(object sender, RoutedEventArgs e)
+    private void PopulateVersionsMenu(ItemCollection items)
     {
         var backups = _backup.List();
-        var menu = new ContextMenu();
         if (backups.Count == 0)
         {
-            menu.Items.Add(new MenuItem { Header = "Aucune sauvegarde automatique", IsEnabled = false });
+            items.Add(new MenuItem { Header = "Aucune sauvegarde automatique", IsEnabled = false });
+            return;
         }
-        else
+        foreach (var entry in backups)
         {
-            foreach (var entry in backups)
-            {
-                var captured = entry;
-                var item = new MenuItem { Header = entry.Display, ToolTip = entry.Path };
-                item.Click += (_, _) => RestoreBackup(captured);
-                menu.Items.Add(item);
-            }
+            var captured = entry;
+            var item = new MenuItem { Header = entry.Display, ToolTip = entry.Path };
+            item.Click += (_, _) => RestoreBackup(captured);
+            items.Add(item);
         }
-        menu.PlacementTarget = VersionsButton;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
     }
 
     private void RestoreBackup(BackupEntry entry)
@@ -793,37 +847,31 @@ public partial class MainWindow : Window
         StatusLeft.Text = $"Marqueur « {label} » ajouté.";
     }
 
-    private void OnMarkersMenu(object sender, RoutedEventArgs e)
+    private void PopulateMarkersMenu(ItemCollection items)
     {
-        var menu = new ContextMenu();
         if (_state.Markers.Count == 0)
         {
-            menu.Items.Add(new MenuItem { Header = "Aucun marqueur", IsEnabled = false });
+            items.Add(new MenuItem { Header = "Aucun marqueur", IsEnabled = false });
+            return;
         }
-        else
+        foreach (var m in _state.Markers)
         {
-            foreach (var m in _state.Markers)
-            {
-                var captured = m;
-                var label = string.IsNullOrWhiteSpace(m.Label) ? "(sans nom)" : m.Label;
-                var item = new MenuItem { Header = $"{label}  —  {FormatTimecode(m.Time)}" };
+            var captured = m;
+            var label = string.IsNullOrWhiteSpace(m.Label) ? "(sans nom)" : m.Label;
+            var item = new MenuItem { Header = $"{label}  —  {FormatTimecode(m.Time)}" };
 
-                var go = new MenuItem { Header = "Aller à ce marqueur" };
-                go.Click += (_, _) => SeekTo(captured.Time);
-                var rename = new MenuItem { Header = "Renommer…" };
-                rename.Click += (_, _) => RenameMarkerPrompt(captured);
-                var del = new MenuItem { Header = "Supprimer" };
-                del.Click += (_, _) => _state.RemoveMarker(captured.Id);
+            var go = new MenuItem { Header = "Aller à ce marqueur" };
+            go.Click += (_, _) => SeekTo(captured.Time);
+            var rename = new MenuItem { Header = "Renommer…" };
+            rename.Click += (_, _) => RenameMarkerPrompt(captured);
+            var del = new MenuItem { Header = "Supprimer" };
+            del.Click += (_, _) => _state.RemoveMarker(captured.Id);
 
-                item.Items.Add(go);
-                item.Items.Add(rename);
-                item.Items.Add(del);
-                menu.Items.Add(item);
-            }
+            item.Items.Add(go);
+            item.Items.Add(rename);
+            item.Items.Add(del);
+            items.Add(item);
         }
-        menu.PlacementTarget = MarkersButton;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
     }
 
     private void RenameMarkerPrompt(Marker marker)
@@ -1036,7 +1084,7 @@ public partial class MainWindow : Window
     {
         var show = HistoryBorder.Visibility != Visibility.Visible;
         HistoryBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        HistoryButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
+        AffichageMenuButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
     }
 
     private void OnSettings(object sender, RoutedEventArgs e)
@@ -1084,7 +1132,6 @@ public partial class MainWindow : Window
             el.Visibility = Visibility.Collapsed;
         }
         PresentationHint.Visibility = Visibility.Visible;
-        PresentationButton.Background = (Brush)FindResource("Accent");
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -1102,7 +1149,6 @@ public partial class MainWindow : Window
             el.Visibility = visibility;
         _prePresentVisibility.Clear();
         PresentationHint.Visibility = Visibility.Collapsed;
-        PresentationButton.Background = (Brush)FindResource("BgControl");
 
         WindowStyle = _prePresentStyle;
         ResizeMode = _prePresentResize;
