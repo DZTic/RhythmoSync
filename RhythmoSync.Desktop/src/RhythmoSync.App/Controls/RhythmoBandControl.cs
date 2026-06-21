@@ -646,7 +646,9 @@ public sealed class RhythmoBandControl : FrameworkElement
             return;
         }
 
-        if (!_isPlaying)
+        // En mode présentation, les blocs sont verrouillés : aucune édition ni
+        // déplacement (on tombe sur le scrub/seek plus bas, navigation toujours OK).
+        if (!_isPlaying && !_presentationMode)
         {
             if (HitResizeHandle(p) is { } handle)
             {
@@ -759,7 +761,7 @@ public sealed class RhythmoBandControl : FrameworkElement
 
     private void HandleDoubleClick(Point p)
     {
-        if (_state is null || _isPlaying) return;
+        if (_state is null || _isPlaying || _presentationMode) return;
 
         if (HitBlock(p) is { } block)
         {
@@ -792,7 +794,7 @@ public sealed class RhythmoBandControl : FrameworkElement
 
     private void UpdateHoverCursor(Point p)
     {
-        if (_isPlaying) { Cursor = Cursors.Arrow; return; }
+        if (_isPlaying || _presentationMode) { Cursor = Cursors.Arrow; return; }
         if (HitResizeHandle(p) is not null) Cursor = Cursors.SizeWE;
         else if (HitBlock(p) is { } hover) Cursor = hover.IsLocked ? Cursors.Arrow : Cursors.Hand;
         else Cursor = Cursors.Arrow;
