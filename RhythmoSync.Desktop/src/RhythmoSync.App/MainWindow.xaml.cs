@@ -339,6 +339,11 @@ public partial class MainWindow : Window
             Media.Play();
             _mixer?.Play();
             _isPlaying = true;
+            // Ré-ancre l'horloge sur la position courante : sans ça, l'ancre du
+            // Stopwatch datait d'avant la pause et l'extrapolation sautait d'un coup
+            // au plafond (+0,5 s) puis « revenait » à la mise à jour de Media.Position
+            // → saccade visible à chaque reprise.
+            _lastMediaPos = -1;
             // Arme le garde-fou : si Media.Position n'avance pas, OnRendering relancera.
             _playKickPos = Media.Position.TotalSeconds;
             _playKickTicks = Stopwatch.GetTimestamp();
