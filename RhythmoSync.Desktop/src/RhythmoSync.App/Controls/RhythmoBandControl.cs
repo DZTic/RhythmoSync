@@ -24,7 +24,6 @@ public sealed class RhythmoBandControl : FrameworkElement
     private ProjectState _state = null!;
     private readonly VisualCollection _children;
     private readonly DrawingVisual _background = new();
-    private readonly DrawingVisual _readingZone = new();
     private readonly ContainerVisual _movingRoot = new();
     private readonly DrawingVisual _ruler = new();
     private readonly DrawingVisual _markersVisual = new();
@@ -58,7 +57,6 @@ public sealed class RhythmoBandControl : FrameworkElement
             foreach (var v in _blockVisuals.Values) _movingRoot.Children.Remove(v);
             _blockVisuals.Clear();
             RedrawBackground();
-            RedrawReadingZone();
             RedrawSyncOverlay();
             UpdateTime(_time);
         }
@@ -104,7 +102,6 @@ public sealed class RhythmoBandControl : FrameworkElement
         _movingRoot.Children.Add(_snapIndicator);
 
         _children.Add(_background);
-        _children.Add(_readingZone);
         _children.Add(_movingRoot);
         _children.Add(_syncOverlay);
 
@@ -112,10 +109,9 @@ public sealed class RhythmoBandControl : FrameworkElement
         {
             _pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             RedrawBackground();
-            RedrawReadingZone();
             RedrawSyncOverlay();
         };
-        SizeChanged += (_, _) => { RedrawBackground(); RedrawReadingZone(); RedrawSyncOverlay(); InvalidateRuler(); };
+        SizeChanged += (_, _) => { RedrawBackground(); RedrawSyncOverlay(); InvalidateRuler(); };
     }
 
     public void Initialize(ProjectState state)
@@ -128,7 +124,6 @@ public sealed class RhythmoBandControl : FrameworkElement
             InvalidateMeasure();
             InvalidateRuler();
             RedrawBackground();
-            RedrawReadingZone();
             RedrawSyncOverlay();
             RedrawMarkers();
             UpdateTime(_time);
@@ -408,27 +403,6 @@ public sealed class RhythmoBandControl : FrameworkElement
 
     private FormattedText MakeText(string text, double size, Brush brush) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, BlockTypeface, size, brush, _pixelsPerDip);
-
-    /// <summary>
-    /// Colonne de lecture mise en valeur (mode présentation uniquement) : un dégradé
-    /// doux centré sur la ligne de synchro, dessiné derrière les blocs, qui éclaire le
-    /// texte au moment où il passe sous la ligne — comme un prompteur professionnel.
-    /// </summary>
-    private void RedrawReadingZone()
-    {
-        using var dc = _readingZone.RenderOpen();
-        if (!_presentationMode || _state is null || ActualWidth <= 0) return;
-
-        var x = RhythmoConstants.SyncLinePositionX;
-        var height = _state.TotalBandHeight;
-        const double w = 84;
-        var glow = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
-        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xff, 0xff, 0xff), 0));
-        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x24, 0xff, 0xff, 0xff), 0.5));
-        glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xff, 0xff, 0xff), 1));
-        glow.Freeze();
-        dc.DrawRectangle(glow, null, new Rect(x - w / 2, 0, w, height));
-    }
 
     // ── Fond statique (lanes) + règle temporelle + ligne de synchro ──────────
 
