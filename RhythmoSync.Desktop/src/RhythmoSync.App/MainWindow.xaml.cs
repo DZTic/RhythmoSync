@@ -224,10 +224,10 @@ public partial class MainWindow : Window
         Band.UpdateTime(time);
         Wave.UpdateTime(time);
 
-        // Enregistrement : dès que l'horloge atteint le début du bloc, on commence à
-        // conserver l'audio capté (le pré-roll servait juste de décompte).
-        if (_isRecording && !_recorder.IsKeeping && time >= _recordBlockStart)
-            _recorder.BeginKeeping();
+        // Enregistrement : décompte visible tant que le curseur approche du bloc, puis
+        // conservation de l'audio dès que l'horloge atteint le début du bloc.
+        if (_isRecording)
+            UpdateRecordingCountdown(time);
 
         // Lecture des prises de doublage, placées à leur bloc (gère ouverture/fermeture
         // des players, activation et recalage au fil de l'eau). Suspendue pendant
@@ -456,12 +456,41 @@ public partial class MainWindow : Window
         _recorder.Stop();               // suite dans OnRecordingFinalized
     }
 
+    private static readonly Brush CountdownAmber = FrozenBrush(Color.FromRgb(0xFA, 0xCC, 0x15));
+    private static readonly Brush CountdownRed = FrozenBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+    private static Brush FrozenBrush(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    /// <summary>
+    /// Pendant le pré-roll, affiche le décompte (s) tandis que le curseur approche du
+    /// bloc ; au début du bloc, bascule en « ● REC » et déclenche la conservation de
+    /// l'audio capté (le pré-roll ne servait que de décompte).
+    /// </summary>
+    private void UpdateRecordingCountdown(double time)
+    {
+        var remaining = _recordBlockStart - time;
+        CountdownOverlay.Visibility = Visibility.Visible;
+        if (remaining > 0.05 && !_recorder.IsKeeping)
+        {
+            CountdownOverlay.BorderBrush = CountdownAmber;
+            CountdownText.FontSize = 72;
+            CountdownText.Text = Math.Ceiling(remaining).ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            if (!_recorder.IsKeeping) _recorder.BeginKeeping();
+            CountdownOverlay.BorderBrush = CountdownRed;
+            CountdownText.FontSize = 30;
+            CountdownText.Text = "● REC";
+        }
+    }
+
     /// <summary>Émis (sur le thread UI) quand le WAV est clos : associe la prise au bloc.</summary>
     private void OnRecordingFinalized(string? path, bool saved)
     {
         var blockId = _recordingBlockId;
         _isRecording = false;
         _recordingBlockId = null;
+        CountdownOverlay.Visibility = Visibility.Collapsed;
         BlockEditor.SetRecording(false);
 
         if (saved && path is not null && blockId is not null &&
