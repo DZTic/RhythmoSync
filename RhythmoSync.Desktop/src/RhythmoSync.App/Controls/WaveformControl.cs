@@ -216,4 +216,13 @@ public sealed class WaveformControl : FrameworkElement
         Cursor = Cursors.Arrow;
         if (wasScrub) ScrubEnded?.Invoke();
     }
+
+    protected override void OnMouseWheel(MouseWheelEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        if (_state is null) return;
+        TimelineWheel.Handle(e, _state, _time, e.GetPosition(this).X, ActualWidth,
+            t => SeekRequested?.Invoke(t));
+        e.Handled = true;
+    }
 }

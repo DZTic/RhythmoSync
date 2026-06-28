@@ -39,6 +39,7 @@ public partial class SettingsDialog : Window
         (string Keys, string Label)[] shortcuts =
         [
             ("Espace", "Lecture / Pause"),
+            ("R", "Enregistrer la prise du bloc sélectionné"),
             ("Ctrl+Z  /  Ctrl+Y", "Annuler / Rétablir"),
             ("Suppr", "Supprimer la sélection"),
             ("Ctrl+C  /  Ctrl+V", "Copier / Coller"),

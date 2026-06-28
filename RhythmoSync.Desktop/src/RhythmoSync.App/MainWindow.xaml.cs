@@ -62,6 +62,14 @@ public partial class MainWindow : Window
     // externes (Voix, Bruitages…) sont des MediaPlayer asservis au transport.
     private Audio.AudioMixer? _mixer;
 
+    // ── Enregistrement / lecture des prises de doublage (par bloc) ─────────────
+    private Audio.TakeMixer? _takeMixer;
+    private readonly Audio.MicRecorder _recorder = new();
+    private string? _micDeviceId;            // micro choisi (null = défaut système)
+    private bool _isRecording;
+    private string? _recordingBlockId;       // bloc en cours d'enregistrement
+    private double _recordBlockStart;        // début du bloc enregistré (pour le trim)
+
     private string? _ffmpegPath;
     private string? _currentProjectPath;
     private CancellationTokenSource? _waveformCts;
@@ -124,10 +132,21 @@ public partial class MainWindow : Window
         _mixer.TrackFailed += (name, message) =>
             StatusLeft.Text = $"Piste « {name} » : lecture impossible ({message}).";
         Mixer.Initialize(_state);
+
+        _takeMixer = new Audio.TakeMixer(_state);
+        _takeMixer.TakeFailed += (_, message) =>
+            StatusLeft.Text = $"Prise illisible ({message}).";
+        _recorder.Finalized += OnRecordingFinalized;
+
         _state.AudioTracksChanged += ApplyAudioVolumes;
         ApplyAudioVolumes();
 
         BlockEditor.Initialize(_state);
+        BlockEditor.SetMics(Audio.MicRecorder.ListDevices(), _micDeviceId);
+        BlockEditor.MicDeviceChanged += id => _micDeviceId = id;
+        BlockEditor.RecordToggleRequested += OnRecordToggle;
+        BlockEditor.PlayTakeRequested += OnPlayTake;
+        BlockEditor.DeleteTakeRequested += OnDeleteTake;
         BlockEditorButton.Background = (Brush)FindResource("Accent"); // panneau visible par défaut
         History.Initialize(_state);
 
@@ -163,7 +182,9 @@ public partial class MainWindow : Window
         {
             CompositionTarget.Rendering -= OnRendering;
             _backupTimer?.Stop();
+            _recorder.Dispose();
             _mixer?.Dispose();
+            _takeMixer?.Dispose();
         };
     }
 
@@ -190,6 +211,7 @@ public partial class MainWindow : Window
                     Media.Position = TimeSpan.FromSeconds(_scrubTime);
                     _lastMediaPos = -1;
                     _mixer?.Seek(_scrubTime);
+                    _takeMixer?.Seek(_scrubTime);
                 }
             }
         }
@@ -201,6 +223,16 @@ public partial class MainWindow : Window
 
         Band.UpdateTime(time);
         Wave.UpdateTime(time);
+
+        // Enregistrement : dès que l'horloge atteint le début du bloc, on commence à
+        // conserver l'audio capté (le pré-roll servait juste de décompte).
+        if (_isRecording && !_recorder.IsKeeping && time >= _recordBlockStart)
+            _recorder.BeginKeeping();
+
+        // Lecture des prises de doublage, placées à leur bloc (gère ouverture/fermeture
+        // des players, activation et recalage au fil de l'eau). Suspendue pendant
+        // l'enregistrement pour ne pas réinjecter une prise existante dans le micro.
+        if (!_isRecording) _takeMixer?.Update(time);
 
         // Le timecode n'a pas besoin de 60 Hz : mise à jour 1 frame sur 4.
         if (++_frameCount % 4 == 0)
@@ -269,6 +301,7 @@ public partial class MainWindow : Window
             _lastMediaPos = -1; // ré-ancrage de l'extrapolation
             Media.Play();
             _mixer?.Seek(pos);
+            _takeMixer?.Seek(pos);
             _playKickTicks = Stopwatch.GetTimestamp();
         }
         else
@@ -308,6 +341,7 @@ public partial class MainWindow : Window
         Media.Position = TimeSpan.FromSeconds(time);
         _lastMediaPos = -1; // ré-ancrage de l'extrapolation à la prochaine frame
         _mixer?.Seek(time);
+        _takeMixer?.Seek(time);
     }
 
     private void OnScrubStarted()
@@ -327,6 +361,7 @@ public partial class MainWindow : Window
         Media.Position = TimeSpan.FromSeconds(target);
         _lastMediaPos = -1;
         _mixer?.Seek(target);
+        _takeMixer?.Seek(target);
     }
 
     private void TogglePlay()
@@ -336,6 +371,7 @@ public partial class MainWindow : Window
         {
             Media.Pause();
             _mixer?.Pause();
+            _takeMixer?.Pause();
             _isPlaying = false;
             _playKickTicks = 0; // garde-fou désarmé
         }
@@ -344,6 +380,7 @@ public partial class MainWindow : Window
             if (_duration > 0 && GetClockTime() >= _duration - 0.05) SeekTo(0);
             Media.Play();
             _mixer?.Play();
+            _takeMixer?.Play();
             _isPlaying = true;
             // Ré-ancre l'horloge sur la position courante : sans ça, l'ancre du
             // Stopwatch datait d'avant la pause et l'extrapolation sautait d'un coup
@@ -360,6 +397,124 @@ public partial class MainWindow : Window
     }
 
     private void OnPlayPause(object sender, RoutedEventArgs e) => TogglePlay();
+
+    // ── Enregistrement des prises de doublage ─────────────────────────────────
+
+    private void OnRecordToggle()
+    {
+        if (_isRecording) StopRecording();
+        else StartRecording();
+    }
+
+    /// <summary>
+    /// Démarre l'enregistrement de la prise du bloc sélectionné : la lecture repart
+    /// 3 s avant le bloc (décompte), puis l'audio capté est conservé dès que l'horloge
+    /// atteint le début du bloc (trim géré dans <see cref="OnRendering"/>).
+    /// </summary>
+    private void StartRecording()
+    {
+        if (_isRecording) return;
+        if (!_mediaReady)
+        {
+            StatusLeft.Text = "Importez une vidéo avant d'enregistrer une prise.";
+            return;
+        }
+        if (_state.SelectedIds.Count != 1)
+        {
+            StatusLeft.Text = "Sélectionnez un seul bloc pour enregistrer sa prise.";
+            return;
+        }
+        var blockId = _state.SelectedIds[0];
+        var block = _state.Dialogues.FirstOrDefault(d => d.Id == blockId);
+        if (block is null) return;
+
+        try
+        {
+            _recorder.Start(_micDeviceId, RecordingPathFor(blockId));
+        }
+        catch (Exception ex)
+        {
+            StatusLeft.Text = $"Micro indisponible : {ex.Message}";
+            return;
+        }
+
+        _isRecording = true;
+        _recordingBlockId = blockId;
+        _recordBlockStart = block.StartTime;
+        BlockEditor.SetRecording(true);
+
+        SeekTo(Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds));
+        if (!_isPlaying) TogglePlay();
+        _takeMixer?.Pause();   // coupe toute prise en cours (anti-réinjection micro)
+        StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
+    }
+
+    private void StopRecording()
+    {
+        if (!_isRecording) return;
+        if (_isPlaying) TogglePlay();   // stoppe la lecture
+        _recorder.Stop();               // suite dans OnRecordingFinalized
+    }
+
+    /// <summary>Émis (sur le thread UI) quand le WAV est clos : associe la prise au bloc.</summary>
+    private void OnRecordingFinalized(string? path, bool saved)
+    {
+        var blockId = _recordingBlockId;
+        _isRecording = false;
+        _recordingBlockId = null;
+        BlockEditor.SetRecording(false);
+
+        if (saved && path is not null && blockId is not null &&
+            _state.Dialogues.Any(d => d.Id == blockId))
+        {
+            _state.UpdateDialogue(blockId, d => d with { AudioFile = path }); // annulable
+            SeekTo(_recordBlockStart);   // tête au début du bloc pour réécouter
+            StatusLeft.Text = "Prise enregistrée ✓";
+        }
+        else
+        {
+            StatusLeft.Text = "Aucune prise enregistrée.";
+        }
+    }
+
+    private void OnPlayTake()
+    {
+        if (_state.SelectedIds.Count != 1) return;
+        var block = _state.Dialogues.FirstOrDefault(d => d.Id == _state.SelectedIds[0]);
+        if (block?.AudioFile is not { Length: > 0 } file || !File.Exists(file)) return;
+        SeekTo(block.StartTime);
+        if (!_isPlaying) TogglePlay();
+    }
+
+    private void OnDeleteTake()
+    {
+        if (_state.SelectedIds.Count != 1) return;
+        var blockId = _state.SelectedIds[0];
+        var block = _state.Dialogues.FirstOrDefault(d => d.Id == blockId);
+        if (block?.AudioFile is not { Length: > 0 }) return;
+        // On efface seulement la référence (annulable) ; le WAV reste sur disque pour
+        // qu'un Ctrl+Z restaure la prise. Le nettoyage des orphelins est hors périmètre.
+        _state.UpdateDialogue(blockId, d => d with { AudioFile = null });
+        StatusLeft.Text = "Prise retirée du bloc.";
+    }
+
+    /// <summary>Dossier des WAV : à côté du projet si enregistré, sinon dossier temporaire.</summary>
+    private string RecordingPathFor(string blockId)
+    {
+        string dir;
+        if (_currentProjectPath is { } proj)
+        {
+            var folder = Path.GetDirectoryName(proj)!;
+            var name = Path.GetFileNameWithoutExtension(proj);
+            dir = Path.Combine(folder, name + "_recordings");
+        }
+        else
+        {
+            dir = Path.Combine(Path.GetTempPath(), "RhythmoSync", "recordings");
+        }
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, blockId + ".wav");
+    }
 
     private void OnMediaOpened(object sender, RoutedEventArgs e)
     {
@@ -383,6 +538,7 @@ public partial class MainWindow : Window
         PlayButton.Content = "▶  Lecture";
         Media.Pause();
         _mixer?.Pause();
+        _takeMixer?.Pause();
     }
 
     private async void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
@@ -511,6 +667,7 @@ public partial class MainWindow : Window
         Media.Stop();
         Media.Source = null;
         _mixer?.Pause();
+        _takeMixer?.Pause();
         _mediaReady = false;
         _isPlaying = false;
         _duration = 0;
@@ -793,6 +950,7 @@ public partial class MainWindow : Window
         // Lecture ne démarrait plus tant qu'on n'avait pas fermé/rouvert le projet.
         Media.Stop();
         _mixer?.Pause();
+        _takeMixer?.Pause();
         _isPlaying = false;
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
@@ -1221,6 +1379,7 @@ public partial class MainWindow : Window
             _playbackRate = rate;
             Media.SpeedRatio = rate;
             _mixer?.SetRate(rate);
+            _takeMixer?.SetRate(rate);
         }
     }
 
@@ -1239,6 +1398,7 @@ public partial class MainWindow : Window
         var originalGain = original is null ? 1.0 : _state.EffectiveTrackVolume(original);
         Media.Volume = VolumeSlider.Value * originalGain;
         if (_mixer is not null) _mixer.MasterVolume = VolumeSlider.Value;
+        if (_takeMixer is not null) _takeMixer.MasterVolume = VolumeSlider.Value;
     }
 
     private void OnToggleMixer(object sender, RoutedEventArgs e)
@@ -1362,7 +1522,13 @@ public partial class MainWindow : Window
                 break;
 
             case Key.Space:
-                TogglePlay();
+                if (_isRecording) StopRecording();
+                else TogglePlay();
+                e.Handled = true;
+                break;
+
+            case Key.R when !ctrl:
+                OnRecordToggle();
                 e.Handled = true;
                 break;
 
@@ -1446,6 +1612,21 @@ public partial class MainWindow : Window
                 break;
             }
 
+            case Key.Up or Key.Down:
+                SeekToAdjacentBlock(forward: e.Key == Key.Down);
+                e.Handled = true;
+                break;
+
+            case Key.Home:
+                SeekTo(0);
+                e.Handled = true;
+                break;
+
+            case Key.End:
+                SeekTo(_duration);
+                e.Handled = true;
+                break;
+
             case Key.Add or Key.OemPlus when ctrl:
                 _state.ZoomLevel *= 1.2;
                 e.Handled = true;
@@ -1456,6 +1637,23 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>
+    /// Cale la tête de lecture sur le début du dialogue suivant (ou précédent) par
+    /// rapport au temps courant — pratique pour passer de réplique en réplique sans
+    /// viser à la souris.
+    /// </summary>
+    private void SeekToAdjacentBlock(bool forward)
+    {
+        const double eps = 1e-3;
+        var t = GetClockTime();
+        double? target = forward
+            ? _state.Dialogues.Where(d => d.StartTime > t + eps)
+                .OrderBy(d => d.StartTime).Select(d => (double?)d.StartTime).FirstOrDefault()
+            : _state.Dialogues.Where(d => d.StartTime < t - eps)
+                .OrderByDescending(d => d.StartTime).Select(d => (double?)d.StartTime).FirstOrDefault();
+        if (target is { } time) SeekTo(time);
     }
 
     private void MergeSelectedBlocks()
