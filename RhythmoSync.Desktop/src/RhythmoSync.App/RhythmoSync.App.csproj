@@ -13,6 +13,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\RhythmoSync.Core\RhythmoSync.Core.csproj" />
     <ProjectReference Include="..\RhythmoSync.Media\RhythmoSync.Media.csproj" />
   </ItemGroup>

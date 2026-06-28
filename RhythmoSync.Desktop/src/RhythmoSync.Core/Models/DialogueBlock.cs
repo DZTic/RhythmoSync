@@ -33,6 +33,13 @@ public sealed record DialogueBlock
     /// </summary>
     public bool IsLocked { get; init; }
 
+    /// <summary>
+    /// Chemin absolu du WAV enregistré pour ce bloc (doublage). Null = aucune prise.
+    /// Même convention que <see cref="AudioTrack.Url"/> : chemin ignoré s'il n'existe
+    /// plus sur disque. Omis du JSON quand null (rétro-compatible).
+    /// </summary>
+    public string? AudioFile { get; init; }
+
     public double EndTime => StartTime + Duration;
 
     /// <summary>Vrai si le texte dépasse la vitesse de lecture recommandée (20 car/s).</summary>

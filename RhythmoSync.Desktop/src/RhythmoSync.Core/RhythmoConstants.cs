@@ -18,6 +18,13 @@ public static class RhythmoConstants
     /// <summary>Largeur minimale d'un bloc en pixels (empêche les blocs invisibles).</summary>
     public const double MinBlockWidthPx = 10;
 
+    /// <summary>
+    /// Pré-roll (décompte) avant le début d'un bloc lors de l'enregistrement d'une
+    /// prise : la lecture démarre ce nombre de secondes avant la réplique pour que le
+    /// comédien arrive sur le temps. L'audio n'est gardé qu'à partir du début du bloc.
+    /// </summary>
+    public const double RecordPreRollSeconds = 3;
+
     public static readonly string[] CharacterColors =
     [
         "#6366f1", // indigo

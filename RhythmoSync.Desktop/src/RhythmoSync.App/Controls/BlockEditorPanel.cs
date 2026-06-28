@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using RhythmoSync.App.Audio;
 using RhythmoSync.Core;
 using RhythmoSync.Core.Models;
 
@@ -49,6 +51,24 @@ public sealed class BlockEditorPanel : ScrollViewer
     private readonly CheckBox _lockCheck;
     private readonly TextBlock _startText;
     private readonly TextBlock _endText;
+
+    // ── Enregistrement (doublage) ──
+    private readonly ComboBox _micCombo;
+    private readonly Button _recordButton;
+    private readonly TextBlock _takeStatus;
+    private readonly Button _playTakeButton;
+    private readonly Button _deleteTakeButton;
+    private bool _settingMics;   // évite de lever MicDeviceChanged pendant le peuplement
+    private bool _isRecording;
+
+    /// <summary>Bouton « Enregistrer / Arrêter » cliqué : MainWindow décide démarrage vs arrêt.</summary>
+    public event Action? RecordToggleRequested;
+    /// <summary>Écouter la prise du bloc sélectionné.</summary>
+    public event Action? PlayTakeRequested;
+    /// <summary>Supprimer la prise du bloc sélectionné.</summary>
+    public event Action? DeleteTakeRequested;
+    /// <summary>Le micro choisi a changé (id du périphérique, ou null = défaut système).</summary>
+    public event Action<string?>? MicDeviceChanged;
 
     public BlockEditorPanel()
     {
@@ -196,6 +216,56 @@ public sealed class BlockEditorPanel : ScrollViewer
             if (CurrentBlock() is { } b) _state?.DeleteDialogues([b.Id]);
         };
 
+        // ── Enregistrement (prise de doublage du bloc) ──
+        _micCombo = new ComboBox
+        {
+            Background = Res<Brush>("BgDeep"), Foreground = Res<Brush>("TextPrimary"),
+            BorderBrush = Res<Brush>("BorderSubtle"), FontSize = 11,
+            Margin = new Thickness(0, 0, 0, 6), Padding = new Thickness(6, 3, 6, 3),
+            ToolTip = "Micro utilisé pour l'enregistrement",
+        };
+        _micCombo.SelectionChanged += (_, _) =>
+        {
+            if (_settingMics) return;
+            MicDeviceChanged?.Invoke((_micCombo.SelectedItem as ComboBoxItem)?.Tag as string);
+        };
+
+        _recordButton = new Button
+        {
+            Content = "●  Enregistrer", Style = Res<Style>("ToolButton"),
+            Padding = new Thickness(10, 6, 10, 6), Foreground = WarnFg,
+            ToolTip = "Démarre la lecture 3 s avant le bloc puis enregistre la voix (R)",
+        };
+        _recordButton.Click += (_, _) => RecordToggleRequested?.Invoke();
+
+        _takeStatus = new TextBlock
+        {
+            Text = "Aucune prise", Foreground = Res<Brush>("TextMuted"), FontSize = 11,
+            Margin = new Thickness(0, 8, 0, 4), VerticalAlignment = VerticalAlignment.Center,
+        };
+        _playTakeButton = new Button
+        {
+            Content = "▶ Écouter", Style = Res<Style>("ToolButton"),
+            Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 0, 6, 0), IsEnabled = false,
+        };
+        _playTakeButton.Click += (_, _) => PlayTakeRequested?.Invoke();
+        _deleteTakeButton = new Button
+        {
+            Content = "🗑 Supprimer", Style = Res<Style>("ToolButton"),
+            Padding = new Thickness(8, 4, 8, 4), Foreground = WarnFg, IsEnabled = false,
+        };
+        _deleteTakeButton.Click += (_, _) => DeleteTakeRequested?.Invoke();
+        var takeButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 0) };
+        takeButtons.Children.Add(_playTakeButton);
+        takeButtons.Children.Add(_deleteTakeButton);
+
+        var recordingSection = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        recordingSection.Children.Add(Label("ENREGISTREMENT"));
+        recordingSection.Children.Add(_micCombo);
+        recordingSection.Children.Add(_recordButton);
+        recordingSection.Children.Add(_takeStatus);
+        recordingSection.Children.Add(takeButtons);
+
         // Assemblage
         _fields.Margin = new Thickness(14, 14, 14, 14);
         _fields.Children.Add(header);
@@ -213,6 +283,7 @@ public sealed class BlockEditorPanel : ScrollViewer
         _fields.Children.Add(laneDurationGrid);
         _fields.Children.Add(Spacer());
         _fields.Children.Add(info);
+        _fields.Children.Add(recordingSection);
         _fields.Children.Add(_lockCheck);
         _fields.Children.Add(deleteButton);
 
@@ -227,6 +298,36 @@ public sealed class BlockEditorPanel : ScrollViewer
         _state = state;
         state.SelectionChanged += Refresh;
         state.DialoguesChanged += Refresh;
+        Refresh();
+    }
+
+    /// <summary>Remplit la liste des micros et sélectionne celui actif (null = défaut système).</summary>
+    public void SetMics(IReadOnlyList<MicDevice> devices, string? selectedId)
+    {
+        _settingMics = true;
+        try
+        {
+            _micCombo.Items.Clear();
+            _micCombo.Items.Add(new ComboBoxItem { Content = "Micro par défaut", Tag = null });
+            foreach (var d in devices)
+                _micCombo.Items.Add(new ComboBoxItem { Content = d.Name, Tag = d.Id });
+
+            var match = _micCombo.Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(i => (i.Tag as string) == selectedId);
+            _micCombo.SelectedItem = match ?? _micCombo.Items[0];
+        }
+        finally { _settingMics = false; }
+    }
+
+    /// <summary>Met à jour l'apparence du bouton et verrouille les contrôles pendant une prise.</summary>
+    public void SetRecording(bool recording)
+    {
+        _isRecording = recording;
+        _recordButton.Content = recording ? "■  Arrêter" : "●  Enregistrer";
+        if (recording) _recordButton.Background = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+        else _recordButton.ClearValue(BackgroundProperty); // rétablit le fond du style
+        _recordButton.Foreground = recording ? Brushes.White : WarnFg;
+        _micCombo.IsEnabled = !recording;
         Refresh();
     }
 
@@ -293,6 +394,16 @@ public sealed class BlockEditorPanel : ScrollViewer
                 _swatches[i].BorderBrush = selected ? Brushes.White : Brushes.Transparent;
                 _swatches[i].BorderThickness = new Thickness(selected ? 2 : 0);
             }
+
+            // Section enregistrement : état de la prise du bloc.
+            var hasTake = block.AudioFile is { Length: > 0 } take && File.Exists(take);
+            _takeStatus.Text = _isRecording ? "● Enregistrement…"
+                : hasTake ? "● Prise enregistrée" : "Aucune prise";
+            _takeStatus.Foreground = hasTake && !_isRecording
+                ? new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81))
+                : Res<Brush>("TextMuted");
+            _playTakeButton.IsEnabled = hasTake && !_isRecording;
+            _deleteTakeButton.IsEnabled = hasTake && !_isRecording;
         }
         finally
         {
