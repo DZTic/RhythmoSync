@@ -69,6 +69,9 @@ public partial class MainWindow : Window
     private bool _isRecording;
     private string? _recordingBlockId;       // bloc en cours d'enregistrement
     private double _recordBlockStart;        // début du bloc enregistré (pour le trim)
+    private bool _recordArming;              // attend que le saut de pré-roll se pose avant de lire
+    private long _recordArmTicks;            // horodatage du début d'armement (garde-fou timeout)
+    private double _recordPreRollStart;      // position cible du pré-roll (début du bloc − 3 s)
 
     private string? _ffmpegPath;
     private string? _currentProjectPath;
@@ -224,10 +227,13 @@ public partial class MainWindow : Window
         Band.UpdateTime(time);
         Wave.UpdateTime(time);
 
-        // Enregistrement : décompte visible tant que le curseur approche du bloc, puis
-        // conservation de l'audio dès que l'horloge atteint le début du bloc.
+        // Enregistrement : armement (attente du saut de pré-roll), puis décompte visible
+        // tandis que le curseur approche du bloc, puis conservation de l'audio.
         if (_isRecording)
-            UpdateRecordingCountdown(time);
+        {
+            if (_recordArming) UpdateRecordingArming();
+            else UpdateRecordingCountdown(time);
+        }
 
         // Lecture des prises de doublage, placées à leur bloc (gère ouverture/fermeture
         // des players, activation et recalage au fil de l'eau). Suspendue pendant
@@ -441,12 +447,16 @@ public partial class MainWindow : Window
         _isRecording = true;
         _recordingBlockId = blockId;
         _recordBlockStart = block.StartTime;
+        _recordPreRollStart = Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds);
         BlockEditor.SetRecording(true);
 
-        SeekTo(Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds));
-        if (!_isPlaying) TogglePlay();
-        _takeMixer?.Pause();   // coupe toute prise en cours (anti-réinjection micro)
-        StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
+        // On positionne le curseur à « début − 3 s » et on ATTEND que le saut se pose
+        // (le MediaElement n'y est pas instantanément) avant de lancer la lecture :
+        // sinon le décompte démarrerait depuis l'ancienne position du curseur.
+        SeekTo(_recordPreRollStart);
+        _recordArming = true;
+        _recordArmTicks = Stopwatch.GetTimestamp();
+        StatusLeft.Text = "● Préparez-vous… décompte avant le bloc.";
     }
 
     private void StopRecording()
@@ -459,6 +469,29 @@ public partial class MainWindow : Window
     private static readonly Brush CountdownAmber = FrozenBrush(Color.FromRgb(0xFA, 0xCC, 0x15));
     private static readonly Brush CountdownRed = FrozenBrush(Color.FromRgb(0xEF, 0x44, 0x44));
     private static Brush FrozenBrush(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    /// <summary>
+    /// Phase d'armement : on attend que le saut vers « début − 3 s » se soit réellement
+    /// posé sur le MediaElement (ou un court timeout) avant de lancer la lecture, pour
+    /// que le décompte parte d'un vrai 3 s. L'overlay affiche le pré-roll en attendant.
+    /// </summary>
+    private void UpdateRecordingArming()
+    {
+        var landed = Math.Abs(Media.Position.TotalSeconds - _recordPreRollStart) < 0.15;
+        var elapsed = (Stopwatch.GetTimestamp() - _recordArmTicks) / (double)Stopwatch.Frequency;
+        if (landed || elapsed > 1.5)
+        {
+            _recordArming = false;
+            if (!_isPlaying) TogglePlay();   // la lecture part du point de pré-roll
+            _takeMixer?.Pause();             // coupe toute prise en cours (anti-réinjection micro)
+            StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
+        }
+
+        CountdownOverlay.Visibility = Visibility.Visible;
+        CountdownOverlay.BorderBrush = CountdownAmber;
+        CountdownText.FontSize = 72;
+        CountdownText.Text = Math.Ceiling(_recordBlockStart - _recordPreRollStart).ToString(CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Pendant le pré-roll, affiche le décompte (s) tandis que le curseur approche du
@@ -489,6 +522,7 @@ public partial class MainWindow : Window
     {
         var blockId = _recordingBlockId;
         _isRecording = false;
+        _recordArming = false;
         _recordingBlockId = null;
         CountdownOverlay.Visibility = Visibility.Collapsed;
         BlockEditor.SetRecording(false);
