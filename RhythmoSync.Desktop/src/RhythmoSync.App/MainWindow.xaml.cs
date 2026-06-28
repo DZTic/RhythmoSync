@@ -71,7 +71,9 @@ public partial class MainWindow : Window
     private double _recordBlockStart;        // début du bloc enregistré (pour le trim)
     private bool _recordArming;              // attend que le saut de pré-roll se pose avant de lire
     private long _recordArmTicks;            // horodatage du début d'armement (garde-fou timeout)
-    private double _recordPreRollStart;      // position cible du pré-roll (début du bloc − 3 s)
+    private double _recordPreRollStart;      // position cible du pré-roll (début du bloc − 3 s, borné à 0)
+    private double _recordHoldSeconds;       // maintien en pause au début quand la vidéo est trop courte avant le bloc
+    private long _recordHoldTicks;           // horodatage du début du maintien/décompte
 
     private string? _ffmpegPath;
     private string? _currentProjectPath;
@@ -444,15 +446,21 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isPlaying) TogglePlay();   // état propre : on part toujours en pause
+
         _isRecording = true;
         _recordingBlockId = blockId;
         _recordBlockStart = block.StartTime;
         _recordPreRollStart = Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds);
+        // Si la vidéo est trop courte avant le bloc (bloc à moins de 3 s du début), on
+        // garantit quand même un décompte complet : on maintient le curseur en pause au
+        // début pendant les secondes manquantes, avant de lancer la lecture.
+        _recordHoldSeconds = Math.Max(0, RhythmoConstants.RecordPreRollSeconds - block.StartTime);
         BlockEditor.SetRecording(true);
 
-        // On positionne le curseur à « début − 3 s » et on ATTEND que le saut se pose
-        // (le MediaElement n'y est pas instantanément) avant de lancer la lecture :
-        // sinon le décompte démarrerait depuis l'ancienne position du curseur.
+        // On positionne le curseur au point de pré-roll et on ATTEND que le saut se pose
+        // (le MediaElement n'y est pas instantanément) avant de démarrer le décompte :
+        // sinon il partirait depuis l'ancienne position du curseur.
         SeekTo(_recordPreRollStart);
         _recordArming = true;
         _recordArmTicks = Stopwatch.GetTimestamp();
@@ -471,9 +479,9 @@ public partial class MainWindow : Window
     private static Brush FrozenBrush(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
     /// <summary>
-    /// Phase d'armement : on attend que le saut vers « début − 3 s » se soit réellement
-    /// posé sur le MediaElement (ou un court timeout) avant de lancer la lecture, pour
-    /// que le décompte parte d'un vrai 3 s. L'overlay affiche le pré-roll en attendant.
+    /// Phase d'armement : on attend que le saut vers le point de pré-roll se soit posé
+    /// sur le MediaElement (ou un court timeout) avant de démarrer le décompte, pour
+    /// qu'il parte d'un vrai 3 s. L'overlay affiche déjà le décompte plein.
     /// </summary>
     private void UpdateRecordingArming()
     {
@@ -482,39 +490,61 @@ public partial class MainWindow : Window
         if (landed || elapsed > 1.5)
         {
             _recordArming = false;
-            if (!_isPlaying) TogglePlay();   // la lecture part du point de pré-roll
-            _takeMixer?.Pause();             // coupe toute prise en cours (anti-réinjection micro)
+            _recordHoldTicks = Stopwatch.GetTimestamp();  // démarre le maintien/décompte
             StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
         }
 
-        CountdownOverlay.Visibility = Visibility.Visible;
-        CountdownOverlay.BorderBrush = CountdownAmber;
-        CountdownText.FontSize = 72;
-        CountdownText.Text = Math.Ceiling(_recordBlockStart - _recordPreRollStart).ToString(CultureInfo.InvariantCulture);
+        ShowCountdown(RhythmoConstants.RecordPreRollSeconds, CountdownAmber);
     }
 
     /// <summary>
-    /// Pendant le pré-roll, affiche le décompte (s) tandis que le curseur approche du
-    /// bloc ; au début du bloc, bascule en « ● REC » et déclenche la conservation de
-    /// l'audio capté (le pré-roll ne servait que de décompte).
+    /// Décompte garanti de 3 s, en deux temps :
+    ///  - <b>maintien</b> (horloge murale) tant qu'il manque de la vidéo avant le bloc :
+    ///    le curseur reste en pause au début ;
+    ///  - <b>roulement</b> (horloge vidéo, précis et robuste aux ralentissements) : la
+    ///    lecture rejoint le bloc.
+    /// Au début du bloc, bascule en « ● REC » et déclenche la conservation de l'audio.
     /// </summary>
     private void UpdateRecordingCountdown(double time)
     {
-        var remaining = _recordBlockStart - time;
-        CountdownOverlay.Visibility = Visibility.Visible;
+        double remaining;
+        if (!_isPlaying && !_recorder.IsKeeping)
+        {
+            // Maintien : le curseur attend en pause au point de pré-roll.
+            var holdElapsed = (Stopwatch.GetTimestamp() - _recordHoldTicks) / (double)Stopwatch.Frequency;
+            remaining = RhythmoConstants.RecordPreRollSeconds - holdElapsed;
+            if (holdElapsed >= _recordHoldSeconds)
+            {
+                TogglePlay();          // le maintien est fini : on roule vers le bloc
+                _takeMixer?.Pause();   // coupe toute prise en cours (anti-réinjection micro)
+            }
+        }
+        else
+        {
+            // Roulement : décompte sur l'horloge vidéo jusqu'au début du bloc.
+            remaining = _recordBlockStart - time;
+        }
+
         if (remaining > 0.05 && !_recorder.IsKeeping)
         {
-            CountdownOverlay.BorderBrush = CountdownAmber;
-            CountdownText.FontSize = 72;
-            CountdownText.Text = Math.Ceiling(remaining).ToString(CultureInfo.InvariantCulture);
+            ShowCountdown(remaining, CountdownAmber);
         }
         else
         {
             if (!_recorder.IsKeeping) _recorder.BeginKeeping();
+            CountdownOverlay.Visibility = Visibility.Visible;
             CountdownOverlay.BorderBrush = CountdownRed;
             CountdownText.FontSize = 30;
             CountdownText.Text = "● REC";
         }
+    }
+
+    private void ShowCountdown(double seconds, Brush border)
+    {
+        CountdownOverlay.Visibility = Visibility.Visible;
+        CountdownOverlay.BorderBrush = border;
+        CountdownText.FontSize = 72;
+        CountdownText.Text = Math.Ceiling(seconds).ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>Émis (sur le thread UI) quand le WAV est clos : associe la prise au bloc.</summary>
