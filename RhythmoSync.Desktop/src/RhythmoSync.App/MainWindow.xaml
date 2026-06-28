@@ -138,6 +138,16 @@
                                 HorizontalAlignment="Center" Margin="0,12,0,0" Click="OnProxyCancel"/>
                     </StackPanel>
 
+                    <!-- Décompte d'enregistrement : le curseur approche du bloc, puis ● REC -->
+                    <Border x:Name="CountdownOverlay" Visibility="Collapsed"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Width="150" Height="150" CornerRadius="75"
+                            Background="#B0000000" BorderBrush="#FACC15" BorderThickness="4">
+                        <TextBlock x:Name="CountdownText" Text="3" Foreground="White"
+                                   FontSize="72" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+
                     <!-- Bandeau du Mode Présentation / Doublage (overlay, masqué hors présentation) -->
                     <Border x:Name="PresentationHint" Visibility="Collapsed"
                             VerticalAlignment="Top" Background="#CC000000" Padding="14,8">
