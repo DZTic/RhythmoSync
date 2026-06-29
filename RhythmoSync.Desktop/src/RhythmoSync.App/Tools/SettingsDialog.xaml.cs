@@ -47,6 +47,8 @@ public partial class SettingsDialog : Window
             ("Ctrl+M", "Fusionner deux blocs sélectionnés"),
             ("Ctrl+L", "Verrouiller / déverrouiller la sélection"),
             ("← / →", "Tête de lecture (image ; Maj = 1 s)"),
+            ("↑ / ↓", "Réplique précédente / suivante"),
+            ("0 / 1", "Aller au début / à la fin"),
             ("Ctrl+← / →", "Décaler la sélection"),
             ("Ctrl++  /  Ctrl+−", "Zoom avant / arrière"),
             ("Ctrl+S  /  Ctrl+Maj+S", "Enregistrer / Enregistrer sous"),

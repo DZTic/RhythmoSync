@@ -18,8 +18,9 @@ namespace RhythmoSync.App.Audio;
 public sealed class TakeMixer : IDisposable
 {
     private const double PreloadSeconds = 4;    // ouvre le player ce délai avant le bloc
-    private const double TailSeconds = 2;        // garde le player ce délai après le clip
+    private const double TailSeconds = 2;        // garde le player « actif » ce délai après le clip
     private const double DriftThreshold = 0.12;  // recalage si l'écart dépasse ce seuil
+    private const int MaxOpenPlayers = 16;       // cache de players gardés ouverts (rejeu instantané)
 
     private sealed class TakePlayer
     {
@@ -36,7 +37,6 @@ public sealed class TakeMixer : IDisposable
 
     private double _rate = 1.0;
     private double _masterVolume = 1.0;
-    private bool _isPlaying;
 
     /// <summary>Une prise n'a pas pu être lue : (id du bloc, message d'erreur).</summary>
     public event Action<string, string>? TakeFailed;
@@ -57,11 +57,9 @@ public sealed class TakeMixer : IDisposable
 
     // ── Transport ─────────────────────────────────────────────────────────────
 
-    public void Play() => _isPlaying = true; // l'activation par clip se fait dans Update
-
+    /// <summary>Arrête immédiatement toute prise en cours (l'activation se fait dans Update).</summary>
     public void Pause()
     {
-        _isPlaying = false;
         foreach (var tp in _players.Values.Where(p => p.Active))
         {
             tp.Player.Pause();
@@ -87,10 +85,16 @@ public sealed class TakeMixer : IDisposable
 
     /// <summary>
     /// À appeler chaque frame depuis la boucle de rendu. Ouvre/ferme les players selon
-    /// la proximité de la tête de lecture, et (en lecture) démarre/positionne/arrête
-    /// chaque prise sous le pointeur. Gère aussi le recalage de dérive au fil de l'eau.
+    /// la proximité de la tête de lecture, et (si l'image vidéo avance vraiment)
+    /// démarre/positionne/arrête chaque prise sous le pointeur.
     /// </summary>
-    public void Update(double clock)
+    /// <param name="videoAdvancing">
+    /// Vrai uniquement si l'image vidéo défile réellement (lecture en cours ET
+    /// <c>Media.Position</c> qui progresse). On se base sur la vraie position vidéo —
+    /// PAS sur l'horloge extrapolée, qui continue d'avancer même décodeur figé — pour
+    /// ne jamais entendre une prise sans que l'image bouge.
+    /// </param>
+    public void Update(double clock, bool videoAdvancing)
     {
         // 1. Players nécessaires (prises proches de la tête de lecture).
         var nearby = new HashSet<string>();
@@ -108,15 +112,37 @@ public sealed class TakeMixer : IDisposable
                 Open(b.Id, file, b.StartTime);
         }
 
-        // 2. Ferme les players hors champ.
-        foreach (var (id, tp) in _players.ToList())
+        // 2. On GARDE les players ouverts (cache) pour un rejeu instantané — rouvrir un
+        // MediaPlayer est asynchrone et ferait jouer la prise en retard. On ne ferme que
+        // si on dépasse le plafond, en sacrifiant les prises les plus éloignées de la
+        // tête de lecture (jamais celles proches).
+        if (_players.Count > MaxOpenPlayers)
         {
-            if (nearby.Contains(id)) continue;
-            tp.Player.Close();
-            _players.Remove(id);
+            var toClose = _players
+                .Where(kv => !nearby.Contains(kv.Key))
+                .OrderByDescending(kv => Math.Abs(kv.Value.Start - clock))
+                .Take(_players.Count - MaxOpenPlayers)
+                .Select(kv => kv.Key)
+                .ToList();
+            foreach (var id in toClose)
+            {
+                _players[id].Player.Close();
+                _players.Remove(id);
+            }
         }
 
-        if (!_isPlaying) return;
+        // Les prises ne sont audibles QUE si l'image vidéo défile réellement. Sinon
+        // (pause, ou décodeur figé) on suspend les prises : on ne doit jamais entendre
+        // une prise sans que la vidéo avance.
+        if (!videoAdvancing)
+        {
+            foreach (var tp in _players.Values.Where(p => p.Active))
+            {
+                tp.Player.Pause();
+                tp.Active = false;
+            }
+            return;
+        }
 
         // 3. Active / positionne / arrête les prises sous la tête de lecture.
         foreach (var tp in _players.Values)
