@@ -69,6 +69,11 @@ public partial class MainWindow : Window
     private bool _isRecording;
     private string? _recordingBlockId;       // bloc en cours d'enregistrement
     private double _recordBlockStart;        // début du bloc enregistré (pour le trim)
+    private bool _recordArming;              // attend que le saut de pré-roll se pose avant de lire
+    private long _recordArmTicks;            // horodatage du début d'armement (garde-fou timeout)
+    private double _recordPreRollStart;      // position cible du pré-roll (début du bloc − 3 s, borné à 0)
+    private double _recordHoldSeconds;       // maintien en pause au début quand la vidéo est trop courte avant le bloc
+    private long _recordHoldTicks;           // horodatage du début du maintien/décompte
 
     private string? _ffmpegPath;
     private string? _currentProjectPath;
@@ -221,13 +226,36 @@ public partial class MainWindow : Window
             CheckPlaybackStall();
         }
 
-        Band.UpdateTime(time);
-        Wave.UpdateTime(time);
+        // Pendant le décompte d'enregistrement, on alimente la bande avec un temps
+        // VIRTUEL allant de « début − 3 s » (souvent négatif pour un bloc proche du
+        // début) jusqu'au bloc : ainsi le bloc défile visiblement vers la ligne de
+        // synchro sur les 3 s entières, même quand il n'y a pas de vidéo avant lui.
+        // Le timecode, lui, reste sur le temps vidéo réel.
+        var bandTime = time;
+        if (_isRecording)
+        {
+            var preRollStart = _recordBlockStart - RhythmoConstants.RecordPreRollSeconds;
+            if (_recordArming)
+            {
+                bandTime = preRollStart;
+            }
+            else
+            {
+                var elapsed = (Stopwatch.GetTimestamp() - _recordHoldTicks) / (double)Stopwatch.Frequency;
+                if (elapsed < _recordHoldSeconds) bandTime = preRollStart + elapsed;
+            }
+        }
 
-        // Enregistrement : dès que l'horloge atteint le début du bloc, on commence à
-        // conserver l'audio capté (le pré-roll servait juste de décompte).
-        if (_isRecording && !_recorder.IsKeeping && time >= _recordBlockStart)
-            _recorder.BeginKeeping();
+        Band.UpdateTime(bandTime);
+        Wave.UpdateTime(bandTime);
+
+        // Enregistrement : armement (attente du saut de pré-roll), puis décompte visible
+        // tandis que le curseur approche du bloc, puis conservation de l'audio.
+        if (_isRecording)
+        {
+            if (_recordArming) UpdateRecordingArming();
+            else UpdateRecordingCountdown(time);
+        }
 
         // Lecture des prises de doublage, placées à leur bloc (gère ouverture/fermeture
         // des players, activation et recalage au fil de l'eau). Suspendue pendant
@@ -438,15 +466,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isPlaying) TogglePlay();   // état propre : on part toujours en pause
+
         _isRecording = true;
         _recordingBlockId = blockId;
         _recordBlockStart = block.StartTime;
+        _recordPreRollStart = Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds);
+        // Si la vidéo est trop courte avant le bloc (bloc à moins de 3 s du début), on
+        // garantit quand même un décompte complet : on maintient le curseur en pause au
+        // début pendant les secondes manquantes, avant de lancer la lecture.
+        _recordHoldSeconds = Math.Max(0, RhythmoConstants.RecordPreRollSeconds - block.StartTime);
         BlockEditor.SetRecording(true);
 
-        SeekTo(Math.Max(0, block.StartTime - RhythmoConstants.RecordPreRollSeconds));
-        if (!_isPlaying) TogglePlay();
-        _takeMixer?.Pause();   // coupe toute prise en cours (anti-réinjection micro)
-        StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
+        // On positionne le curseur au point de pré-roll et on ATTEND que le saut se pose
+        // (le MediaElement n'y est pas instantanément) avant de démarrer le décompte :
+        // sinon il partirait depuis l'ancienne position du curseur.
+        SeekTo(_recordPreRollStart);
+        _recordArming = true;
+        _recordArmTicks = Stopwatch.GetTimestamp();
+        StatusLeft.Text = "● Préparez-vous… décompte avant le bloc.";
     }
 
     private void StopRecording()
@@ -456,12 +494,87 @@ public partial class MainWindow : Window
         _recorder.Stop();               // suite dans OnRecordingFinalized
     }
 
+    private static readonly Brush CountdownAmber = FrozenBrush(Color.FromRgb(0xFA, 0xCC, 0x15));
+    private static readonly Brush CountdownRed = FrozenBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+    private static Brush FrozenBrush(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    /// <summary>
+    /// Phase d'armement : on attend que le saut vers le point de pré-roll se soit posé
+    /// sur le MediaElement (ou un court timeout) avant de démarrer le décompte, pour
+    /// qu'il parte d'un vrai 3 s. L'overlay affiche déjà le décompte plein.
+    /// </summary>
+    private void UpdateRecordingArming()
+    {
+        var landed = Math.Abs(Media.Position.TotalSeconds - _recordPreRollStart) < 0.15;
+        var elapsed = (Stopwatch.GetTimestamp() - _recordArmTicks) / (double)Stopwatch.Frequency;
+        if (landed || elapsed > 1.5)
+        {
+            _recordArming = false;
+            _recordHoldTicks = Stopwatch.GetTimestamp();  // démarre le maintien/décompte
+            StatusLeft.Text = "● Enregistrement… la prise démarre au début du bloc.";
+        }
+
+        ShowCountdown(RhythmoConstants.RecordPreRollSeconds, CountdownAmber);
+    }
+
+    /// <summary>
+    /// Décompte garanti de 3 s, en deux temps :
+    ///  - <b>maintien</b> (horloge murale) tant qu'il manque de la vidéo avant le bloc :
+    ///    le curseur reste en pause au début ;
+    ///  - <b>roulement</b> (horloge vidéo, précis et robuste aux ralentissements) : la
+    ///    lecture rejoint le bloc.
+    /// Au début du bloc, bascule en « ● REC » et déclenche la conservation de l'audio.
+    /// </summary>
+    private void UpdateRecordingCountdown(double time)
+    {
+        double remaining;
+        if (!_isPlaying && !_recorder.IsKeeping)
+        {
+            // Maintien : le curseur attend en pause au point de pré-roll.
+            var holdElapsed = (Stopwatch.GetTimestamp() - _recordHoldTicks) / (double)Stopwatch.Frequency;
+            remaining = RhythmoConstants.RecordPreRollSeconds - holdElapsed;
+            if (holdElapsed >= _recordHoldSeconds)
+            {
+                TogglePlay();          // le maintien est fini : on roule vers le bloc
+                _takeMixer?.Pause();   // coupe toute prise en cours (anti-réinjection micro)
+            }
+        }
+        else
+        {
+            // Roulement : décompte sur l'horloge vidéo jusqu'au début du bloc.
+            remaining = _recordBlockStart - time;
+        }
+
+        if (remaining > 0.05 && !_recorder.IsKeeping)
+        {
+            ShowCountdown(remaining, CountdownAmber);
+        }
+        else
+        {
+            if (!_recorder.IsKeeping) _recorder.BeginKeeping();
+            CountdownOverlay.Visibility = Visibility.Visible;
+            CountdownOverlay.BorderBrush = CountdownRed;
+            CountdownText.FontSize = 30;
+            CountdownText.Text = "● REC";
+        }
+    }
+
+    private void ShowCountdown(double seconds, Brush border)
+    {
+        CountdownOverlay.Visibility = Visibility.Visible;
+        CountdownOverlay.BorderBrush = border;
+        CountdownText.FontSize = 72;
+        CountdownText.Text = Math.Ceiling(seconds).ToString(CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Émis (sur le thread UI) quand le WAV est clos : associe la prise au bloc.</summary>
     private void OnRecordingFinalized(string? path, bool saved)
     {
         var blockId = _recordingBlockId;
         _isRecording = false;
+        _recordArming = false;
         _recordingBlockId = null;
+        CountdownOverlay.Visibility = Visibility.Collapsed;
         BlockEditor.SetRecording(false);
 
         if (saved && path is not null && blockId is not null &&
