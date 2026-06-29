@@ -257,10 +257,14 @@ public partial class MainWindow : Window
             else UpdateRecordingCountdown(time);
         }
 
-        // Lecture des prises de doublage, placées à leur bloc (gère ouverture/fermeture
-        // des players, activation et recalage au fil de l'eau). Suspendue pendant
-        // l'enregistrement pour ne pas réinjecter une prise existante dans le micro.
-        if (!_isRecording) _takeMixer?.Update(time);
+        // Lecture des prises de doublage, placées à leur bloc. Une prise n'est jouée que
+        // si l'image vidéo défile VRAIMENT : on se base sur la progression réelle de
+        // Media.Position (et non l'horloge extrapolée, qui court devant si le décodeur
+        // cale), faute de quoi on entendrait une prise sur une image figée. Suspendue
+        // pendant l'enregistrement pour ne pas réinjecter une prise dans le micro.
+        var videoAdvancing = _isPlaying && !_isScrubbing &&
+            (Stopwatch.GetTimestamp() - _anchorTicks) / (double)Stopwatch.Frequency < 0.3;
+        if (!_isRecording) _takeMixer?.Update(time, videoAdvancing);
 
         // Le timecode n'a pas besoin de 60 Hz : mise à jour 1 frame sur 4.
         if (++_frameCount % 4 == 0)
@@ -408,7 +412,7 @@ public partial class MainWindow : Window
             if (_duration > 0 && GetClockTime() >= _duration - 0.05) SeekTo(0);
             Media.Play();
             _mixer?.Play();
-            _takeMixer?.Play();
+            // Les prises sont (ré)activées par TakeMixer.Update dès que l'image défile.
             _isPlaying = true;
             // Ré-ancre l'horloge sur la position courante : sans ça, l'ancre du
             // Stopwatch datait d'avant la pause et l'extrapolation sautait d'un coup
@@ -1730,12 +1734,12 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
-            case Key.Home:
+            case Key.D0 or Key.NumPad0 when !ctrl:
                 SeekTo(0);
                 e.Handled = true;
                 break;
 
-            case Key.End:
+            case Key.D1 or Key.NumPad1 when !ctrl:
                 SeekTo(_duration);
                 e.Handled = true;
                 break;
