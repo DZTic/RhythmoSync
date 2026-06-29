@@ -226,8 +226,28 @@ public partial class MainWindow : Window
             CheckPlaybackStall();
         }
 
-        Band.UpdateTime(time);
-        Wave.UpdateTime(time);
+        // Pendant le décompte d'enregistrement, on alimente la bande avec un temps
+        // VIRTUEL allant de « début − 3 s » (souvent négatif pour un bloc proche du
+        // début) jusqu'au bloc : ainsi le bloc défile visiblement vers la ligne de
+        // synchro sur les 3 s entières, même quand il n'y a pas de vidéo avant lui.
+        // Le timecode, lui, reste sur le temps vidéo réel.
+        var bandTime = time;
+        if (_isRecording)
+        {
+            var preRollStart = _recordBlockStart - RhythmoConstants.RecordPreRollSeconds;
+            if (_recordArming)
+            {
+                bandTime = preRollStart;
+            }
+            else
+            {
+                var elapsed = (Stopwatch.GetTimestamp() - _recordHoldTicks) / (double)Stopwatch.Frequency;
+                if (elapsed < _recordHoldSeconds) bandTime = preRollStart + elapsed;
+            }
+        }
+
+        Band.UpdateTime(bandTime);
+        Wave.UpdateTime(bandTime);
 
         // Enregistrement : armement (attente du saut de pré-roll), puis décompte visible
         // tandis que le curseur approche du bloc, puis conservation de l'audio.
