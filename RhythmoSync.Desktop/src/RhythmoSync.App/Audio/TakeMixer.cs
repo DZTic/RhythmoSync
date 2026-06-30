@@ -57,13 +57,19 @@ public sealed class TakeMixer : IDisposable
 
     // ── Transport ─────────────────────────────────────────────────────────────
 
-    /// <summary>Arrête immédiatement toute prise en cours (l'activation se fait dans Update).</summary>
+    /// <summary>
+    /// Arrête immédiatement toute prise en cours (l'activation se fait dans Update).
+    /// On met AUSSI le volume à 0 : <see cref="MediaPlayer.Pause"/> de WPF est parfois
+    /// ignoré quand il suit de près un <c>Play()</c> (le clip continue alors jusqu'au
+    /// bout en arrière-plan). Couper le volume garantit le silence quoi qu'il arrive ;
+    /// il est restauré quand la prise est réactivée dans <see cref="Update"/>.
+    /// </summary>
     public void Pause()
     {
-        foreach (var tp in _players.Values.Where(p => p.Active))
+        foreach (var tp in _players.Values)
         {
-            tp.Player.Pause();
-            tp.Active = false;
+            if (tp.Active) { tp.Player.Pause(); tp.Active = false; }
+            tp.Player.Volume = 0;
         }
     }
 
@@ -136,10 +142,10 @@ public sealed class TakeMixer : IDisposable
         // une prise sans que la vidéo avance.
         if (!videoAdvancing)
         {
-            foreach (var tp in _players.Values.Where(p => p.Active))
+            foreach (var tp in _players.Values)
             {
-                tp.Player.Pause();
-                tp.Active = false;
+                if (tp.Active) { tp.Player.Pause(); tp.Active = false; }
+                if (tp.Player.Volume != 0) tp.Player.Volume = 0;  // silence garanti (Pause WPF peu fiable)
             }
             return;
         }
@@ -155,6 +161,7 @@ public sealed class TakeMixer : IDisposable
                 if (!tp.Active)
                 {
                     tp.Player.Position = TimeSpan.FromSeconds(Math.Max(0, local));
+                    tp.Player.Volume = VoiceVolume();   // restaure après une coupure (Pause/volume 0)
                     tp.Player.Play();
                     tp.Active = true;
                 }
@@ -163,10 +170,14 @@ public sealed class TakeMixer : IDisposable
                     tp.Player.Position = TimeSpan.FromSeconds(Math.Max(0, local));
                 }
             }
-            else if (tp.Active)
+            else
             {
-                tp.Player.Pause();
-                tp.Active = false;
+                // Hors fenêtre : la prise est passée (ou pas encore). On la met en pause
+                // ET on force le volume à 0. Pause() de WPF étant peu fiable, une prise
+                // « passée » peut continuer en arrière-plan et se faire réentendre ; le
+                // volume 0 garantit qu'aucune prise déjà jouée ne repasse.
+                if (tp.Active) { tp.Player.Pause(); tp.Active = false; }
+                if (tp.Player.Volume != 0) tp.Player.Volume = 0;
             }
         }
     }
@@ -222,8 +233,11 @@ public sealed class TakeMixer : IDisposable
 
     private void ApplyVolumes()
     {
+        // Uniquement les prises actives : on ne ré-ouvre pas le volume des prises mises
+        // en sourdine (volume 0) sur pause, sinon un réglage du curseur les rendrait
+        // audibles alors que la vidéo est figée.
         var v = VoiceVolume();
-        foreach (var tp in _players.Values) tp.Player.Volume = v;
+        foreach (var tp in _players.Values.Where(p => p.Active)) tp.Player.Volume = v;
     }
 
     public void Dispose()

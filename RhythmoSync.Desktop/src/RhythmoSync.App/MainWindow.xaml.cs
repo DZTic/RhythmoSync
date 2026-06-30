@@ -33,6 +33,12 @@ public partial class MainWindow : Window
     private double _playbackRate = 1.0;
     private bool _mediaReady;
 
+    // À la pause, on FIGE l'horloge affichée à la position extrapolée du moment (sans
+    // toucher au média) : la timeline ne « revient » pas en arrière et, surtout, elle
+    // n'avance plus du tout tant qu'on est en pause (pas de défilement « fantôme » qui
+    // déclencherait une prise plus loin). Le média est réaligné à la reprise.
+    private double? _frozenTime;
+
     // Marge maximale d'extrapolation de l'horloge au-delà du dernier palier réel de
     // Media.Position : empêche la timeline de s'emballer quand la vidéo se fige.
     private const double MaxExtrapolationSeconds = 0.5;
@@ -278,6 +284,8 @@ public partial class MainWindow : Window
     private double GetClockTime()
     {
         if (!_mediaReady) return 0;
+        // En pause, l'horloge est figée : aucun défilement, donc aucune prise déclenchée.
+        if (!_isPlaying && _frozenTime is { } frozen) return frozen;
         var mediaPos = Media.Position.TotalSeconds;
         var now = Stopwatch.GetTimestamp();
         if (mediaPos != _lastMediaPos)
@@ -357,6 +365,7 @@ public partial class MainWindow : Window
     private void SeekTo(double time)
     {
         if (!_mediaReady) return;
+        _frozenTime = null;   // une position est imposée : l'horloge figée n'a plus lieu d'être
         time = Math.Clamp(time, 0, _duration);
 
         // Pendant un scrub : on mémorise juste la cible (affichage immédiat via
@@ -378,7 +387,8 @@ public partial class MainWindow : Window
 
     private void OnScrubStarted()
     {
-        _scrubTime = GetClockTime();
+        _scrubTime = GetClockTime();   // part de la position figée si on était en pause
+        _frozenTime = null;
         _scrubSeekPending = false;
         _scrubLastChangeTicks = Stopwatch.GetTimestamp();
         _isScrubbing = true;
@@ -401,6 +411,11 @@ public partial class MainWindow : Window
         if (!_mediaReady) return;
         if (_isPlaying)
         {
+            // On FIGE l'horloge à la position extrapolée affichée : pas de retour en
+            // arrière, et surtout l'horloge n'avance plus (pas de défilement fantôme
+            // qui ferait jouer une prise plus loin). Le média n'est PAS re-seeké ici
+            // (un seek juste après le 1er démarrage pouvait le faire repartir).
+            _frozenTime = GetClockTime();
             Media.Pause();
             _mixer?.Pause();
             _takeMixer?.Pause();
@@ -409,7 +424,9 @@ public partial class MainWindow : Window
         }
         else
         {
-            if (_duration > 0 && GetClockTime() >= _duration - 0.05) SeekTo(0);
+            // Reprend exactement là où l'affichage était figé (réaligne le média).
+            if (_frozenTime is { } resume) SeekTo(resume);
+            else if (_duration > 0 && GetClockTime() >= _duration - 0.05) SeekTo(0);
             Media.Play();
             _mixer?.Play();
             // Les prises sont (ré)activées par TakeMixer.Update dès que l'image défile.
@@ -650,6 +667,7 @@ public partial class MainWindow : Window
     private void OnMediaEnded(object sender, RoutedEventArgs e)
     {
         _isPlaying = false;
+        _frozenTime = null;
         _playKickTicks = 0; // garde-fou désarmé
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
@@ -787,6 +805,7 @@ public partial class MainWindow : Window
         _takeMixer?.Pause();
         _mediaReady = false;
         _isPlaying = false;
+        _frozenTime = null;
         _duration = 0;
         _playbackPath = null;
         _videoInfo = null;
@@ -1069,6 +1088,7 @@ public partial class MainWindow : Window
         _mixer?.Pause();
         _takeMixer?.Pause();
         _isPlaying = false;
+        _frozenTime = null;
         Band.IsPlaying = false;
         PlayButton.Content = "▶  Lecture";
 
