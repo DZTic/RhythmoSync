@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RhythmoSync.Core.Models;
 
 /// <summary>
@@ -34,11 +36,31 @@ public sealed record DialogueBlock
     public bool IsLocked { get; init; }
 
     /// <summary>
-    /// Chemin absolu du WAV enregistré pour ce bloc (doublage). Null = aucune prise.
-    /// Même convention que <see cref="AudioTrack.Url"/> : chemin ignoré s'il n'existe
-    /// plus sur disque. Omis du JSON quand null (rétro-compatible).
+    /// Chemin absolu du WAV de la prise ACTIVE pour ce bloc (doublage). Null = aucune
+    /// prise. C'est cette prise qui est lue et exportée. Même convention que
+    /// <see cref="AudioTrack.Url"/> : chemin ignoré s'il n'existe plus sur disque. Omis
+    /// du JSON quand null (rétro-compatible).
     /// </summary>
     public string? AudioFile { get; init; }
+
+    /// <summary>
+    /// Toutes les prises enregistrées pour ce bloc (chemins WAV absolus), dans l'ordre
+    /// d'enregistrement, pour les comparer (Prise A / B / C…). La prise active
+    /// (<see cref="AudioFile"/>) en fait toujours partie. Null/absent dans les fichiers
+    /// d'avant cette fonctionnalité : une éventuelle <see cref="AudioFile"/> seule
+    /// constitue alors l'unique prise (voir <see cref="TakeList"/>). Omis du JSON si null.
+    /// </summary>
+    public IReadOnlyList<string>? Takes { get; init; }
+
+    /// <summary>
+    /// Liste effective des prises, rétro-compatible : <see cref="Takes"/> si renseignée,
+    /// sinon l'éventuelle <see cref="AudioFile"/> seule, sinon vide. Non sérialisée.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> TakeList =>
+        Takes is { Count: > 0 } ? Takes
+        : AudioFile is { Length: > 0 } single ? [single]
+        : [];
 
     public double EndTime => StartTime + Duration;
 

@@ -15,6 +15,9 @@ public sealed class ProjectState
     private readonly List<List<DialogueBlock>> _past = [];
     private readonly List<List<DialogueBlock>> _future = [];
     private readonly List<string> _selected = [];
+    // Miroir de _selected pour un test d'appartenance en O(1) : IsSelected est appelé
+    // par bloc visible à chaque frame de rendu (la liste seule donnait un coût O(n²)).
+    private readonly HashSet<string> _selectedSet = [];
 
     public IReadOnlyList<DialogueBlock> Dialogues => _dialogues;
     public IReadOnlyList<string> SelectedIds => _selected;
@@ -187,7 +190,7 @@ public sealed class ProjectState
     private void PruneSelection()
     {
         var valid = _dialogues.Select(d => d.Id).ToHashSet();
-        if (_selected.RemoveAll(id => !valid.Contains(id)) > 0) SelectionChanged?.Invoke();
+        if (SelRemoveWhere(id => !valid.Contains(id)) > 0) SelectionChanged?.Invoke();
     }
 
     // ── Mutations de dialogues ───────────────────────────────────────────────
@@ -232,7 +235,7 @@ public sealed class ProjectState
         if (ids.Count == 0) return;
         var set = ids.ToHashSet();
         Commit(_dialogues.Where(d => !set.Contains(d.Id)).ToList(), snapshot: true);
-        if (_selected.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
+        if (SelRemoveWhere(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
     public void GroupSelected()
@@ -307,20 +310,30 @@ public sealed class ProjectState
         }
         Commit(newList, snapshot: true);
 
-        _selected.Clear();
-        _selected.Add(merged.Id);
+        SelClear();
+        SelAdd(merged.Id);
         SelectionChanged?.Invoke();
         return true;
     }
 
     // ── Sélection ────────────────────────────────────────────────────────────
 
+    // _selected (ordre, pour SelectedIds[0]) et _selectedSet (appartenance O(1)) sont
+    // toujours mis à jour ensemble via ces trois primitives.
+    private void SelClear() { _selected.Clear(); _selectedSet.Clear(); }
+    private void SelAdd(string id) { if (_selectedSet.Add(id)) _selected.Add(id); }
+    private int SelRemoveWhere(Predicate<string> match)
+    {
+        _selectedSet.RemoveWhere(id => match(id));
+        return _selected.RemoveAll(match);
+    }
+
     public void SelectBlock(string? id, bool multi = false)
     {
         if (id is null)
         {
             if (_selected.Count == 0) return;
-            _selected.Clear();
+            SelClear();
             SelectionChanged?.Invoke();
             return;
         }
@@ -333,20 +346,20 @@ public sealed class ProjectState
 
         if (multi)
         {
-            if (_selected.Contains(id))
-                _selected.RemoveAll(related.Contains);
+            if (_selectedSet.Contains(id))
+                SelRemoveWhere(related.Contains);
             else
-                foreach (var r in related.Where(r => !_selected.Contains(r))) _selected.Add(r);
+                foreach (var r in related) SelAdd(r);
         }
         else
         {
-            _selected.Clear();
-            _selected.AddRange(related);
+            SelClear();
+            foreach (var r in related) SelAdd(r);
         }
         SelectionChanged?.Invoke();
     }
 
-    public bool IsSelected(string id) => _selected.Contains(id);
+    public bool IsSelected(string id) => _selectedSet.Contains(id);
 
     // ── Outils ───────────────────────────────────────────────────────────────
 
@@ -422,7 +435,7 @@ public sealed class ProjectState
         SortMarkers();
         _past.Clear();
         _future.Clear();
-        _selected.Clear();
+        SelClear();
         DialoguesChanged?.Invoke();
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();
@@ -441,7 +454,7 @@ public sealed class ProjectState
         _markers = [];
         _past.Clear();
         _future.Clear();
-        _selected.Clear();
+        SelClear();
         DialoguesChanged?.Invoke();
         SelectionChanged?.Invoke();
         ViewChanged?.Invoke();

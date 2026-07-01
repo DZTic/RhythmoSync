@@ -87,6 +87,12 @@ public partial class MainWindow : Window
     private DialogueBlock? _editingBlock;
     private int _frameCount;
 
+    // Dernier temps effectivement rendu par OnRendering. Au repos (ni lecture, ni scrub,
+    // ni enregistrement), si l'horloge n'a pas bougé on saute toute la passe de rendu :
+    // sinon la boucle CompositionTarget.Rendering re-virtualise et ré-alloue ~60 fois/s
+    // pour rien (pression GC continue même fenêtre inactive). NaN = « jamais rendu ».
+    private double _lastRenderTime = double.NaN;
+
     // ── Mode Présentation / Doublage (plein écran, port du isPresentationMode web) ──
     // On réutilise le même MediaElement et la même bande : on masque seulement le
     // « chrome » d'édition et on bascule la fenêtre en plein écran sans bordure.
@@ -156,7 +162,9 @@ public partial class MainWindow : Window
         BlockEditor.SetMics(Audio.MicRecorder.ListDevices(), _micDeviceId);
         BlockEditor.MicDeviceChanged += id => _micDeviceId = id;
         BlockEditor.RecordToggleRequested += OnRecordToggle;
+        BlockEditor.SelectTakeRequested += OnSelectTake;
         BlockEditor.PlayTakeRequested += OnPlayTake;
+        BlockEditor.DownloadTakeRequested += OnDownloadTake;
         BlockEditor.DeleteTakeRequested += OnDeleteTake;
         BlockEditorButton.Background = (Brush)FindResource("Accent"); // panneau visible par défaut
         History.Initialize(_state);
@@ -195,7 +203,8 @@ public partial class MainWindow : Window
             _backupTimer?.Stop();
             _recorder.Dispose();
             _mixer?.Dispose();
-            _takeMixer?.Dispose();
+            _takeMixer?.Dispose();   // libère les verrous de fichiers avant le nettoyage
+            CleanupOrphanTempRecordings();
         };
     }
 
@@ -231,6 +240,14 @@ public partial class MainWindow : Window
             time = GetClockTime();
             CheckPlaybackStall();
         }
+
+        // Court-circuit au repos : rien ne défile (pas de lecture/scrub/enregistrement) et
+        // l'horloge est identique à la dernière frame rendue → on ne re-virtualise ni ne
+        // redessine (les changements de blocs/vue passent par leurs propres événements).
+        // Cela supprime les allocations 60 fps de la boucle de rendu quand l'app est inactive.
+        var active = _isPlaying || _isScrubbing || _isRecording;
+        if (!active && time.Equals(_lastRenderTime)) return;
+        _lastRenderTime = time;
 
         // Pendant le décompte d'enregistrement, on alimente la bande avec un temps
         // VIRTUEL allant de « début − 3 s » (souvent négatif pour un bloc proche du
@@ -402,6 +419,10 @@ public partial class MainWindow : Window
         var target = Math.Clamp(_scrubTime, 0, _duration);
         Media.Position = TimeSpan.FromSeconds(target);
         _lastMediaPos = -1;
+        // En pause, on FIGE l'affichage sur la cible : sinon GetClockTime lirait la
+        // Media.Position encore périmée (le seek est asynchrone) et la tête « reviendrait »
+        // à la position d'avant-scrub pendant quelques frames avant de sauter à la cible.
+        if (!_isPlaying) _frozenTime = target;
         _mixer?.Seek(target);
         _takeMixer?.Seek(target);
     }
@@ -599,38 +620,126 @@ public partial class MainWindow : Window
         BlockEditor.SetRecording(false);
 
         if (saved && path is not null && blockId is not null &&
-            _state.Dialogues.Any(d => d.Id == blockId))
+            _state.Dialogues.FirstOrDefault(d => d.Id == blockId) is { } block)
         {
-            _state.UpdateDialogue(blockId, d => d with { AudioFile = path }); // annulable
+            // Nouvelle prise AJOUTÉE à la liste (A/B/C…) et rendue active. On ne supprime
+            // pas les précédentes : on les garde pour les comparer.
+            var takes = new List<string>(block.TakeList) { path };
+            _state.UpdateDialogue(blockId, d => d with { AudioFile = path, Takes = takes }); // annulable
             SeekTo(_recordBlockStart);   // tête au début du bloc pour réécouter
-            StatusLeft.Text = "Prise enregistrée ✓";
+            StatusLeft.Text = takes.Count > 1 ? $"Prise {TakeLetter(takes.Count - 1)} enregistrée ✓" : "Prise enregistrée ✓";
         }
         else
         {
+            // Nouvelle prise vide (arrêt avant le bloc) : on garde les prises existantes.
             StatusLeft.Text = "Aucune prise enregistrée.";
         }
     }
 
-    private void OnPlayTake()
+    /// <summary>Lettre d'une prise par son index (0→A, 1→B…), pour les messages de statut.</summary>
+    private static string TakeLetter(int index)
     {
-        if (_state.SelectedIds.Count != 1) return;
-        var block = _state.Dialogues.FirstOrDefault(d => d.Id == _state.SelectedIds[0]);
-        if (block?.AudioFile is not { Length: > 0 } file || !File.Exists(file)) return;
+        var s = "";
+        index++;
+        while (index > 0) { index--; s = (char)('A' + index % 26) + s; index /= 26; }
+        return s;
+    }
+
+    /// <summary>Bloc unique sélectionné, ou null si la sélection n'est pas un bloc unique.</summary>
+    private DialogueBlock? SelectedBlock() =>
+        _state.SelectedIds.Count == 1
+            ? _state.Dialogues.FirstOrDefault(d => d.Id == _state.SelectedIds[0])
+            : null;
+
+    /// <summary>Rend active la prise d'index donné (sans relancer la lecture).</summary>
+    private void OnSelectTake(int index)
+    {
+        if (SelectedBlock() is not { } block) return;
+        var takes = block.TakeList;
+        if (index < 0 || index >= takes.Count) return;
+        if (string.Equals(takes[index], block.AudioFile, StringComparison.OrdinalIgnoreCase)) return;
+        _state.UpdateDialogue(block.Id, d => d with { AudioFile = takes[index] }, skipHistory: true);
+        StatusLeft.Text = $"Prise {TakeLetter(index)} active.";
+    }
+
+    private void OnPlayTake(int index)
+    {
+        if (SelectedBlock() is not { } block) return;
+        var takes = block.TakeList;
+        if (index < 0 || index >= takes.Count || !File.Exists(takes[index])) return;
+        // Rendre cette prise active (pour la comparer) puis (re)caler la tête au début du bloc.
+        if (!string.Equals(takes[index], block.AudioFile, StringComparison.OrdinalIgnoreCase))
+            _state.UpdateDialogue(block.Id, d => d with { AudioFile = takes[index] }, skipHistory: true);
         SeekTo(block.StartTime);
         if (!_isPlaying) TogglePlay();
     }
 
-    private void OnDeleteTake()
+    private void OnDownloadTake(int index)
     {
-        if (_state.SelectedIds.Count != 1) return;
-        var blockId = _state.SelectedIds[0];
-        var block = _state.Dialogues.FirstOrDefault(d => d.Id == blockId);
-        if (block?.AudioFile is not { Length: > 0 }) return;
-        // On efface seulement la référence (annulable) ; le WAV reste sur disque pour
-        // qu'un Ctrl+Z restaure la prise. Le nettoyage des orphelins est hors périmètre.
-        _state.UpdateDialogue(blockId, d => d with { AudioFile = null });
-        StatusLeft.Text = "Prise retirée du bloc.";
+        if (SelectedBlock() is not { } block) return;
+        var takes = block.TakeList;
+        if (index < 0 || index >= takes.Count) return;
+        var file = takes[index];
+        if (!File.Exists(file)) { StatusLeft.Text = "Fichier de prise introuvable."; return; }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Audio WAV (*.wav)|*.wav|Tous les fichiers (*.*)|*.*",
+            FileName = SuggestedTakeFileName(block, index),
+            Title = "Télécharger la prise",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        try
+        {
+            File.Copy(file, dialog.FileName, overwrite: true);
+            StatusLeft.Text = $"Prise téléchargée : {Path.GetFileName(dialog.FileName)}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Erreur lors du téléchargement de la prise : " + ex.Message,
+                "Télécharger la prise", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
+
+    /// <summary>Nom proposé : « personnage_début_priseA.wav », assaini.</summary>
+    private static string SuggestedTakeFileName(DialogueBlock block, int index)
+    {
+        var name = string.IsNullOrWhiteSpace(block.CharacterName) ? "prise" : block.CharacterName.Trim();
+        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+        var tc = block.StartTime.ToString("0.0", CultureInfo.InvariantCulture).Replace('.', '_');
+        return $"{name}_{tc}s_prise{TakeLetter(index)}.wav";
+    }
+
+    private void OnDeleteTake(int index)
+    {
+        if (SelectedBlock() is not { } block) return;
+        var takes = block.TakeList;
+        if (index < 0 || index >= takes.Count) return;
+
+        var removed = takes[index];
+        var remaining = takes.Where((_, i) => i != index).ToList();
+        // Si on supprime la prise active, on bascule sur une autre (la dernière) ou aucune.
+        var newActive = string.Equals(removed, block.AudioFile, StringComparison.OrdinalIgnoreCase)
+            ? remaining.Count > 0 ? remaining[^1] : null
+            : block.AudioFile;
+
+        // On ne retire QUE la référence (annulable) : le WAV reste sur disque pour qu'un
+        // Ctrl+Z restaure une prise réellement rejouable. L'effacer ici rendait la prise
+        // « introuvable » après annulation. Le nettoyage des orphelins temporaires se fait
+        // aux points sûrs (nouveau projet, ouverture, fermeture) via CleanupOrphanTempRecordings.
+        _state.UpdateDialogue(block.Id, d => d with
+        {
+            AudioFile = newActive,
+            Takes = remaining.Count > 0 ? remaining : null,
+        });
+
+        StatusLeft.Text = remaining.Count > 0 ? "Prise supprimée." : "Prise retirée du bloc.";
+    }
+
+    /// <summary>Dossier temporaire des prises d'un projet non encore enregistré.</summary>
+    private static string TempRecordingsDir =>
+        Path.Combine(Path.GetTempPath(), "RhythmoSync", "recordings");
 
     /// <summary>Dossier des WAV : à côté du projet si enregistré, sinon dossier temporaire.</summary>
     private string RecordingPathFor(string blockId)
@@ -644,10 +753,40 @@ public partial class MainWindow : Window
         }
         else
         {
-            dir = Path.Combine(Path.GetTempPath(), "RhythmoSync", "recordings");
+            dir = TempRecordingsDir;
         }
         Directory.CreateDirectory(dir);
-        return Path.Combine(dir, blockId + ".wav");
+        // Nom UNIQUE par prise (horodatage) plutôt qu'un nom fixe par bloc : ré-enregistrer
+        // un bloc qui a déjà une prise écrirait sinon sur le WAV existant, encore tenu
+        // ouvert par le MediaPlayer du TakeMixer (cache de lecture) → le WaveFileWriter
+        // échouerait sur fichier verrouillé et l'enregistrement avortait silencieusement.
+        // L'ancienne prise est supprimée après coup dans OnRecordingFinalized.
+        return Path.Combine(dir, $"{blockId}_{DateTime.Now:yyyyMMddHHmmssfff}.wav");
+    }
+
+    /// <summary>
+    /// Supprime du dossier temporaire les WAV de prises qui ne sont plus référencés par
+    /// aucun bloc du projet courant. Appelé aux transitions sûres (nouveau projet,
+    /// ouverture, fermeture) pour éviter que le temp n'enfle sans fin ; ne touche jamais
+    /// aux dossiers « _recordings » à côté d'un projet enregistré, ni pendant une prise.
+    /// </summary>
+    private void CleanupOrphanTempRecordings()
+    {
+        if (_isRecording) return;
+        try
+        {
+            if (!Directory.Exists(TempRecordingsDir)) return;
+            var referenced = _state.Dialogues
+                .SelectMany(d => d.TakeList)
+                .Select(p => { try { return Path.GetFullPath(p); } catch { return p; } })
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in Directory.EnumerateFiles(TempRecordingsDir, "*.wav"))
+            {
+                if (referenced.Contains(Path.GetFullPath(file))) continue;
+                try { File.Delete(file); } catch { /* verrouillé : on réessaiera plus tard */ }
+            }
+        }
+        catch { /* nettoyage best-effort */ }
     }
 
     private void OnMediaOpened(object sender, RoutedEventArgs e)
@@ -794,6 +933,7 @@ public partial class MainWindow : Window
         _state.ResetProject();
         _currentProjectPath = null;
         UnloadVideo();
+        CleanupOrphanTempRecordings();   // le projet vidé ne référence plus aucune prise temp
     }
 
     private void UnloadVideo()
@@ -984,6 +1124,9 @@ public partial class MainWindow : Window
             _state.ImportProject(project);
             _currentProjectPath = fileName;
             _recent.Add(fileName);
+            // Retire les prises temp d'une session précédente non enregistrée (celles du
+            // projet ouvert, si elles pointent vers le temp, restent car référencées).
+            CleanupOrphanTempRecordings();
 
             if (project.VideoPath is { } videoPath && File.Exists(videoPath))
             {
@@ -1554,9 +1697,11 @@ public partial class MainWindow : Window
 
     private void OnToggleHistory(object sender, RoutedEventArgs e)
     {
-        var show = HistoryBorder.Visibility != Visibility.Visible;
-        HistoryBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        AffichageMenuButton.Background = show ? (Brush)FindResource("Accent") : (Brush)FindResource("BgControl");
+        // Simple bascule de visibilité : « Affichage ▾ » est un menu déroulant, pas un
+        // interrupteur d'historique — on ne le met donc pas en surbrillance ici (c'était
+        // trompeur). Le panneau lui-même s'ouvre/ferme visiblement.
+        HistoryBorder.Visibility = HistoryBorder.Visibility != Visibility.Visible
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnSettings(object sender, RoutedEventArgs e)
@@ -1640,8 +1785,11 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
-        // Laisse les zones de texte gérer leur propre saisie
-        if (Keyboard.FocusedElement is TextBox) return;
+        // Laisse les contrôles de saisie gérer leurs propres touches : une zone de texte
+        // (frappe), un ComboBox (Espace = ouvrir, flèches = changer d'élément) ou un Slider
+        // (flèches = régler). Sans ça, Espace/flèches/Suppr étaient captés par les raccourcis
+        // globaux — au point que Retour arrière sur le combo Micro supprimait le bloc sélectionné.
+        if (Keyboard.FocusedElement is TextBox or ComboBox or ComboBoxItem or Slider) return;
 
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);

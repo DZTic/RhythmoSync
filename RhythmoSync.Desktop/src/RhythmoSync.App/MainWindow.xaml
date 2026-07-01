@@ -44,7 +44,7 @@
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                     <TextBlock Style="{StaticResource MutedText}" Text="Zoom"/>
-                    <Slider x:Name="ZoomSlider" Width="110" Minimum="40" Maximum="600" Value="200"
+                    <Slider x:Name="ZoomSlider" Width="110" Minimum="20" Maximum="1200" Value="200"
                             VerticalAlignment="Center" Margin="6,0,10,0" ValueChanged="OnZoomChanged"/>
                     <CheckBox x:Name="SnapCheck" Content="Snap" IsChecked="True" Checked="OnSnapChanged" Unchecked="OnSnapChanged"
                               Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11"/>

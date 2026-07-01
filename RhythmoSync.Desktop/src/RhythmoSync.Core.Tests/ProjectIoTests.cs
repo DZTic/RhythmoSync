@@ -59,6 +59,45 @@ public class ProjectIoTests : IDisposable
     }
 
     [Fact]
+    public void SaveThenLoad_PreservesTakes()
+    {
+        var project = new ProjectFile
+        {
+            Dialogues =
+            [
+                new DialogueBlock
+                {
+                    Id = "a",
+                    AudioFile = @"C:\rec\b.wav",
+                    Takes = [@"C:\rec\a.wav", @"C:\rec\b.wav"],
+                },
+            ],
+        };
+
+        ProjectIo.Save(_path, project);
+        var loaded = ProjectIo.Load(_path);
+
+        var block = loaded.Dialogues.Single();
+        Assert.Equal(@"C:\rec\b.wav", block.AudioFile);
+        Assert.Equal([@"C:\rec\a.wav", @"C:\rec\b.wav"], block.Takes);
+    }
+
+    [Fact]
+    public void Save_OmitsComputedTakeList()
+    {
+        var project = new ProjectFile
+        {
+            Dialogues = [new DialogueBlock { Id = "a", AudioFile = @"C:\rec\a.wav" }],
+        };
+
+        ProjectIo.Save(_path, project);
+        var json = File.ReadAllText(_path);
+
+        // TakeList est calculée ([JsonIgnore]) : elle ne doit pas polluer le fichier.
+        Assert.DoesNotContain("takeList", json);
+    }
+
+    [Fact]
     public void Save_StampsTimestamp()
     {
         var project = new ProjectFile();
