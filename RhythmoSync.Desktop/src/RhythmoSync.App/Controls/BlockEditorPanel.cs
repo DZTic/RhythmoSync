@@ -56,17 +56,20 @@ public sealed class BlockEditorPanel : ScrollViewer
     private readonly ComboBox _micCombo;
     private readonly Button _recordButton;
     private readonly TextBlock _takeStatus;
-    private readonly Button _playTakeButton;
-    private readonly Button _deleteTakeButton;
+    private readonly StackPanel _takesList;   // une ligne par prise (A/B/C…), reconstruite à chaque Refresh
     private bool _settingMics;   // évite de lever MicDeviceChanged pendant le peuplement
     private bool _isRecording;
 
     /// <summary>Bouton « Enregistrer / Arrêter » cliqué : MainWindow décide démarrage vs arrêt.</summary>
     public event Action? RecordToggleRequested;
-    /// <summary>Écouter la prise du bloc sélectionné.</summary>
-    public event Action? PlayTakeRequested;
-    /// <summary>Supprimer la prise du bloc sélectionné.</summary>
-    public event Action? DeleteTakeRequested;
+    /// <summary>Rendre active la prise d'index donné (celle qui sera lue/exportée).</summary>
+    public event Action<int>? SelectTakeRequested;
+    /// <summary>Écouter la prise d'index donné.</summary>
+    public event Action<int>? PlayTakeRequested;
+    /// <summary>Télécharger (enregistrer sous) la prise d'index donné.</summary>
+    public event Action<int>? DownloadTakeRequested;
+    /// <summary>Supprimer la prise d'index donné.</summary>
+    public event Action<int>? DeleteTakeRequested;
     /// <summary>Le micro choisi a changé (id du périphérique, ou null = défaut système).</summary>
     public event Action<string?>? MicDeviceChanged;
 
@@ -243,28 +246,14 @@ public sealed class BlockEditorPanel : ScrollViewer
             Text = "Aucune prise", Foreground = Res<Brush>("TextMuted"), FontSize = 11,
             Margin = new Thickness(0, 8, 0, 4), VerticalAlignment = VerticalAlignment.Center,
         };
-        _playTakeButton = new Button
-        {
-            Content = "▶ Écouter", Style = Res<Style>("ToolButton"),
-            Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 0, 6, 0), IsEnabled = false,
-        };
-        _playTakeButton.Click += (_, _) => PlayTakeRequested?.Invoke();
-        _deleteTakeButton = new Button
-        {
-            Content = "🗑 Supprimer", Style = Res<Style>("ToolButton"),
-            Padding = new Thickness(8, 4, 8, 4), Foreground = WarnFg, IsEnabled = false,
-        };
-        _deleteTakeButton.Click += (_, _) => DeleteTakeRequested?.Invoke();
-        var takeButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 0) };
-        takeButtons.Children.Add(_playTakeButton);
-        takeButtons.Children.Add(_deleteTakeButton);
+        _takesList = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
 
         var recordingSection = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
         recordingSection.Children.Add(Label("ENREGISTREMENT"));
         recordingSection.Children.Add(_micCombo);
         recordingSection.Children.Add(_recordButton);
         recordingSection.Children.Add(_takeStatus);
-        recordingSection.Children.Add(takeButtons);
+        recordingSection.Children.Add(_takesList);
 
         // Assemblage
         _fields.Margin = new Thickness(14, 14, 14, 14);
@@ -395,20 +384,95 @@ public sealed class BlockEditorPanel : ScrollViewer
                 _swatches[i].BorderThickness = new Thickness(selected ? 2 : 0);
             }
 
-            // Section enregistrement : état de la prise du bloc.
-            var hasTake = block.AudioFile is { Length: > 0 } take && File.Exists(take);
-            _takeStatus.Text = _isRecording ? "● Enregistrement…"
-                : hasTake ? "● Prise enregistrée" : "Aucune prise";
-            _takeStatus.Foreground = hasTake && !_isRecording
-                ? new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81))
-                : Res<Brush>("TextMuted");
-            _playTakeButton.IsEnabled = hasTake && !_isRecording;
-            _deleteTakeButton.IsEnabled = hasTake && !_isRecording;
+            // Section enregistrement : liste des prises du bloc (A/B/C…).
+            BuildTakesList(block);
         }
         finally
         {
             _loading = false;
         }
+    }
+
+    // ── Liste des prises (A/B/C…) ──────────────────────────────────────────────
+
+    private static readonly Brush TakeActiveFg = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+
+    /// <summary>Reconstruit la liste des prises du bloc : statut + une ligne par prise.</summary>
+    private void BuildTakesList(DialogueBlock block)
+    {
+        _takesList.Children.Clear();
+        var takes = block.TakeList;
+        var count = takes.Count;
+
+        _takeStatus.Text = _isRecording ? "● Enregistrement…"
+            : count == 0 ? "Aucune prise"
+            : count == 1 ? "1 prise" : $"{count} prises";
+        _takeStatus.Foreground = count > 0 && !_isRecording ? TakeActiveFg : Res<Brush>("TextMuted");
+
+        for (var i = 0; i < count; i++)
+        {
+            var isActive = string.Equals(takes[i], block.AudioFile, StringComparison.OrdinalIgnoreCase);
+            _takesList.Children.Add(BuildTakeRow(i, TakeLabel(i), isActive, File.Exists(takes[i])));
+        }
+    }
+
+    /// <summary>Une ligne : sélecteur de prise active (gauche) + écouter / télécharger / supprimer (droite).</summary>
+    private FrameworkElement BuildTakeRow(int index, string label, bool isActive, bool exists)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 3, 0, 0) };
+
+        // Actions, ancrées à droite (ajout du plus à droite vers la gauche).
+        var del = SmallTakeButton("🗑", "Supprimer cette prise");
+        del.Foreground = WarnFg;
+        del.IsEnabled = !_isRecording;
+        del.Click += (_, _) => DeleteTakeRequested?.Invoke(index);
+        DockPanel.SetDock(del, Dock.Right);
+        row.Children.Add(del);
+
+        var download = SmallTakeButton("⤓", "Télécharger cette prise (WAV)");
+        download.IsEnabled = exists && !_isRecording;
+        download.Click += (_, _) => DownloadTakeRequested?.Invoke(index);
+        DockPanel.SetDock(download, Dock.Right);
+        row.Children.Add(download);
+
+        var play = SmallTakeButton("▶", "Écouter cette prise");
+        play.IsEnabled = exists && !_isRecording;
+        play.Click += (_, _) => PlayTakeRequested?.Invoke(index);
+        DockPanel.SetDock(play, Dock.Right);
+        row.Children.Add(play);
+
+        // Sélecteur de prise active : remplit le reste de la ligne (LastChildFill).
+        var select = new Button
+        {
+            Content = (isActive ? "● " : "○ ") + label + (exists ? "" : "  (introuvable)"),
+            Style = Res<Style>("ToolButton"),
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(8, 4, 8, 4),
+            FontWeight = isActive ? FontWeights.Bold : FontWeights.Normal,
+            Foreground = isActive ? TakeActiveFg : Res<Brush>("TextPrimary"),
+            IsEnabled = !_isRecording,
+            ToolTip = isActive ? "Prise active (lue et exportée)" : "Rendre cette prise active",
+        };
+        select.Click += (_, _) => SelectTakeRequested?.Invoke(index);
+        row.Children.Add(select);
+
+        return row;
+    }
+
+    private Button SmallTakeButton(string glyph, string tip) => new()
+    {
+        Content = glyph, Style = Res<Style>("ToolButton"),
+        Padding = new Thickness(6, 4, 6, 4), Margin = new Thickness(4, 0, 0, 0),
+        MinWidth = 30, ToolTip = tip,
+    };
+
+    /// <summary>« Prise A », « Prise B »… puis AA, AB… (le débordement reste théorique).</summary>
+    private static string TakeLabel(int index)
+    {
+        var s = "";
+        index++;
+        while (index > 0) { index--; s = (char)('A' + index % 26) + s; index /= 26; }
+        return "Prise " + s;
     }
 
     // ── Application des changements ────────────────────────────────────────────

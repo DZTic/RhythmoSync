@@ -27,6 +27,9 @@ public sealed class MicRecorder : IDisposable
     private bool _sourceIsFloat;
     private long _keptBytes;
     private volatile bool _keeping;
+    // Sérialise l'écriture (thread de capture WASAPI) et la fermeture (thread UI) du
+    // writer : un dernier buffer en retard pouvait sinon écrire dans un writer déjà libéré.
+    private readonly object _writerLock = new();
 
     /// <summary>Enregistrement terminé et fichier finalisé : (chemin, vrai si du son a été gardé).</summary>
     public event Action<string?, bool>? Finalized;
@@ -99,27 +102,31 @@ public sealed class MicRecorder : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (!_keeping || _writer is null) return;
+        if (!_keeping) return;
+        lock (_writerLock)
+        {
+            if (_writer is null) return;
 
-        if (_sourceIsFloat)
-        {
-            // 32-bit float → 16-bit PCM, échantillon par échantillon.
-            var sampleCount = e.BytesRecorded / 4;
-            var pcm = new byte[sampleCount * 2];
-            for (var i = 0; i < sampleCount; i++)
+            if (_sourceIsFloat)
             {
-                var f = BitConverter.ToSingle(e.Buffer, i * 4);
-                var s = (short)Math.Clamp((int)(f * 32767f), short.MinValue, short.MaxValue);
-                pcm[i * 2] = (byte)s;
-                pcm[i * 2 + 1] = (byte)(s >> 8);
+                // 32-bit float → 16-bit PCM, échantillon par échantillon.
+                var sampleCount = e.BytesRecorded / 4;
+                var pcm = new byte[sampleCount * 2];
+                for (var i = 0; i < sampleCount; i++)
+                {
+                    var f = BitConverter.ToSingle(e.Buffer, i * 4);
+                    var s = (short)Math.Clamp((int)(f * 32767f), short.MinValue, short.MaxValue);
+                    pcm[i * 2] = (byte)s;
+                    pcm[i * 2 + 1] = (byte)(s >> 8);
+                }
+                _writer.Write(pcm, 0, pcm.Length);
+                _keptBytes += pcm.Length;
             }
-            _writer.Write(pcm, 0, pcm.Length);
-            _keptBytes += pcm.Length;
-        }
-        else
-        {
-            _writer.Write(e.Buffer, 0, e.BytesRecorded);
-            _keptBytes += e.BytesRecorded;
+            else
+            {
+                _writer.Write(e.Buffer, 0, e.BytesRecorded);
+                _keptBytes += e.BytesRecorded;
+            }
         }
     }
 
@@ -128,8 +135,7 @@ public sealed class MicRecorder : IDisposable
         var path = _path;
         var saved = _keptBytes > 0;
 
-        _writer?.Dispose();
-        _writer = null;
+        lock (_writerLock) { _writer?.Dispose(); _writer = null; }
         if (_capture is not null)
         {
             _capture.DataAvailable -= OnDataAvailable;
@@ -152,8 +158,7 @@ public sealed class MicRecorder : IDisposable
     public void Dispose()
     {
         try { _capture?.StopRecording(); } catch { /* ignore */ }
-        _writer?.Dispose();
-        _writer = null;
+        lock (_writerLock) { _writer?.Dispose(); _writer = null; }
         _capture?.Dispose();
         _capture = null;
     }

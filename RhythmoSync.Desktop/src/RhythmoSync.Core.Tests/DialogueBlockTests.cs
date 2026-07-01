@@ -40,4 +40,29 @@ public class DialogueBlockTests
         Assert.Equal(a.StartTime, b.StartTime);
         Assert.Equal(a.Id, b.Id); // l'identité est conservée par `with`
     }
+
+    [Fact]
+    public void TakeList_IsEmpty_WhenNoTakeAtAll()
+    {
+        Assert.Empty(new DialogueBlock().TakeList);
+    }
+
+    [Fact]
+    public void TakeList_FallsBackToAudioFile_WhenTakesAbsent()
+    {
+        // Rétro-compat : un bloc d'avant la fonctionnalité multi-prises (AudioFile seul).
+        var block = new DialogueBlock { AudioFile = @"C:\rec\a.wav" };
+        Assert.Equal([@"C:\rec\a.wav"], block.TakeList);
+    }
+
+    [Fact]
+    public void TakeList_UsesTakes_WhenPresent()
+    {
+        var block = new DialogueBlock
+        {
+            AudioFile = @"C:\rec\b.wav",
+            Takes = [@"C:\rec\a.wav", @"C:\rec\b.wav"],
+        };
+        Assert.Equal([@"C:\rec\a.wav", @"C:\rec\b.wav"], block.TakeList);
+    }
 }
