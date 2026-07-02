@@ -4,10 +4,12 @@ using RhythmoSync.Core.Models;
 
 namespace RhythmoSync.App;
 
-/// <summary>Une sauvegarde automatique sur disque (chemin + date + libellé d'affichage).</summary>
-internal sealed record BackupEntry(string Path, DateTime When)
+/// <summary>Une sauvegarde automatique sur disque (chemin + date + nom du projet d'origine).</summary>
+internal sealed record BackupEntry(string Path, DateTime When, string BaseName)
 {
-    public string Display => When.ToString("dddd d MMMM yyyy, HH:mm:ss");
+    // Le dossier de sauvegardes est commun à tous les projets : sans le nom de base,
+    // on pouvait restaurer sans le savoir une version d'un AUTRE projet.
+    public string Display => $"{BaseName} — {When:dddd d MMMM yyyy, HH:mm:ss}";
 }
 
 /// <summary>
@@ -49,7 +51,7 @@ internal sealed class BackupManager
         {
             if (!Directory.Exists(Dir)) return [];
             return Directory.EnumerateFiles(Dir, "*.rsp.bak")
-                .Select(p => new BackupEntry(p, File.GetLastWriteTime(p)))
+                .Select(p => new BackupEntry(p, File.GetLastWriteTime(p), BaseNameOf(p)))
                 .OrderByDescending(b => b.When)
                 .ToList();
         }
@@ -57,6 +59,16 @@ internal sealed class BackupManager
         {
             return [];
         }
+    }
+
+    /// <summary>Nom de base du projet extrait de « base-yyyyMMdd-HHmmss.rsp.bak ».</summary>
+    private static string BaseNameOf(string path)
+    {
+        var name = Path.GetFileName(path);
+        const string suffix = ".rsp.bak";
+        if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) name = name[..^suffix.Length];
+        var match = System.Text.RegularExpressions.Regex.Match(name, @"^(.+)-\d{8}-\d{6}$");
+        return match.Success ? match.Groups[1].Value : name;
     }
 
     private void Prune(int keep)

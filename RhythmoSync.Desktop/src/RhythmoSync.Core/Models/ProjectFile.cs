@@ -52,6 +52,20 @@ public static class ProjectIo
     public static void Save(string path, ProjectFile project)
     {
         project.Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        File.WriteAllText(path, JsonSerializer.Serialize(project, Options));
+        var json = JsonSerializer.Serialize(project, Options);
+        // Écriture atomique : le JSON est posé dans un fichier temporaire du même
+        // dossier puis substitué d'un coup — un crash en pleine écriture ne peut
+        // plus corrompre le .rsp existant.
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, json);
+        try
+        {
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temp); } catch { /* best-effort */ }
+            throw;
+        }
     }
 }

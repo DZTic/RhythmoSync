@@ -86,6 +86,29 @@ public class SubtitleIoTests
     }
 
     [Fact]
+    public void ParseSrt_AcceptsDotMilliseconds()
+    {
+        // Certains outils écrivent « 00:00:01.500 » au lieu de la virgule SRT
+        // canonique : les temps ne doivent pas retomber silencieusement à 0.
+        const string srt = "1\n00:00:01.500 --> 00:00:03.250\nPoint décimal\n";
+        var parsed = SubtitleIo.ParseSrt(srt);
+
+        Assert.Single(parsed);
+        Assert.Equal(1.5, parsed[0].StartTime, 3);
+        Assert.Equal(1.75, parsed[0].Duration, 3);
+    }
+
+    [Fact]
+    public void ExportSrt_RoundsMillisecondsInsteadOfTruncating()
+    {
+        // 1.001 s : la décomposition champ par champ tronquait à « 000 » ms.
+        var blocks = new[] { new DialogueBlock { StartTime = 1.001, Duration = 1, Text = "x" } };
+        var srt = SubtitleIo.ExportSrt(blocks);
+
+        Assert.Contains("00:00:01,001 --> 00:00:02,001", srt);
+    }
+
+    [Fact]
     public void ParseVtt_StripsCueAlignmentOptions()
     {
         const string vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:center line:90%\nTexte\n";

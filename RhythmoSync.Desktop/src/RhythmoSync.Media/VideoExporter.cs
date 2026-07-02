@@ -31,6 +31,12 @@ public interface IBandStripSource
 /// <summary>Piste externe du mixeur à inclure dans l'export : fichier + gain effectif (0–1).</summary>
 public sealed record ExternalAudioTrack(string Path, double Gain);
 
+/// <summary>
+/// Prise de doublage à mixer dans l'export : fichier WAV + début ABSOLU sur la
+/// timeline vidéo (le début du bloc, en secondes) + gain effectif (0–1).
+/// </summary>
+public sealed record TakeAudioClip(string Path, double StartTime, double Gain);
+
 public sealed record ExportSettings
 {
     public required string FfmpegPath { get; init; }
@@ -62,6 +68,13 @@ public sealed record ExportSettings
 
     /// <summary>Pistes externes du mixeur (Voix, Bruitages…) à mixer avec l'audio source.</summary>
     public IReadOnlyList<ExternalAudioTrack> ExternalAudioTracks { get; init; } = [];
+
+    /// <summary>
+    /// Prises de doublage actives des blocs (une par bloc au plus), calées sur leur
+    /// bloc à l'export — c'est la promesse de <c>DialogueBlock.AudioFile</c> : la
+    /// prise active est lue ET exportée.
+    /// </summary>
+    public IReadOnlyList<TakeAudioClip> Takes { get; init; } = [];
 
     public bool ForceCpuEncoder { get; init; }
     public string Title { get; init; } = "";
@@ -237,12 +250,13 @@ public static class VideoExporter
             "-s", $"{s.ExportWidth}x{s.ExportHeight}",
             "-r", s.Fps.ToString("0.######", inv),
             "-i", "pipe:0");
-        // --- Audio : mixage des pistes du mixeur (Original + Voix/Bruitages…) ---
-        // Sans piste externe chargée : chemin historique (audio source seul, map
-        // optionnel — robuste aux vidéos muettes sans sonde préalable). Avec
-        // pistes externes : filter_complex volume par piste + amix, en sondant
-        // d'abord la présence d'audio dans la source (un [1:a:0] manquant ferait
-        // échouer tout l'encodage).
+        // --- Audio : mixage des pistes du mixeur (Original + Voix/Bruitages…) et des
+        // prises de doublage actives, calées sur leur bloc (adelay). ---
+        // Sans piste externe ni prise : chemin historique (audio source seul, map
+        // optionnel — robuste aux vidéos muettes sans sonde préalable). Sinon :
+        // filter_complex volume (+ adelay pour les prises) par entrée + amix, en
+        // sondant d'abord la présence d'audio dans la source (un [1:a:0] manquant
+        // ferait échouer tout l'encodage).
         var audioMapped = false;
         if (s.IncludeAudio)
         {
@@ -251,17 +265,22 @@ public static class VideoExporter
                 .Where(t => t.Gain > 0 && File.Exists(t.Path))
                 .Select(t => t with { Gain = Math.Clamp(t.Gain, 0, 1) })
                 .ToList();
+            // Prises pertinentes : gain audible, fichier présent, bloc avant la fin de plage.
+            var takes = s.Takes
+                .Where(t => t.Gain > 0 && t.StartTime < s.EndTime && File.Exists(t.Path))
+                .Select(t => t with { Gain = Math.Clamp(t.Gain, 0, 1) })
+                .ToList();
 
-            void AddTimedInput(string path) => AddArgs(encoderPsi,
-                "-ss", s.StartTime.ToString("0.######", inv),
+            void AddTimedInput(string path, double startInSource) => AddArgs(encoderPsi,
+                "-ss", startInSource.ToString("0.######", inv),
                 "-t", rangeDuration.ToString("0.######", inv),
                 "-i", path);
 
-            if (externals.Count == 0)
+            if (externals.Count == 0 && takes.Count == 0)
             {
                 if (originalGain > 0)
                 {
-                    AddTimedInput(s.VideoPath);
+                    AddTimedInput(s.VideoPath, s.StartTime);
                     AddArgs(encoderPsi,
                         "-map", "0:v", "-map", "1:a:0?",
                         "-c:a", "aac", "-b:a", "192k");
@@ -273,29 +292,42 @@ public static class VideoExporter
             }
             else
             {
-                var audioInputs = new List<(string Path, double Gain)>();
+                // (fichier, gain, -ss dans la source, retard d'insertion sur la timeline)
+                var audioInputs = new List<(string Path, double Gain, double Ss, double Delay)>();
                 if (originalGain > 0 && await HasAudioStreamAsync(s.FfmpegPath, s.VideoPath, ct))
-                    audioInputs.Add((s.VideoPath, originalGain));
-                audioInputs.AddRange(externals.Select(t => (t.Path, t.Gain)));
+                    audioInputs.Add((s.VideoPath, originalGain, s.StartTime, 0.0));
+                audioInputs.AddRange(externals.Select(t => (t.Path, t.Gain, s.StartTime, 0.0)));
+                // Une prise commence à son bloc : si la plage exportée commence après le
+                // bloc, on entre dans le WAV (-ss) ; sinon on retarde la prise (adelay)
+                // jusqu'à ce que la timeline atteigne le bloc.
+                audioInputs.AddRange(takes.Select(t => (
+                    t.Path, t.Gain,
+                    Math.Max(0, s.StartTime - t.StartTime),
+                    Math.Max(0, t.StartTime - s.StartTime))));
 
                 if (audioInputs.Count > 0)
                 {
                     var chains = new List<string>();
                     for (var i = 0; i < audioInputs.Count; i++)
                     {
-                        AddTimedInput(audioInputs[i].Path);
+                        var (path, gain, ss, delay) = audioInputs[i];
+                        AddTimedInput(path, ss);
                         // L'entrée 0 est la vidéo brute sur stdin → audio à partir de 1
-                        chains.Add(string.Format(inv, "[{0}:a:0]volume={1:0.####}[a{2}]",
-                            i + 1, audioInputs[i].Gain, i));
+                        var chain = string.Format(inv, "[{0}:a:0]volume={1:0.####}", i + 1, gain);
+                        if (delay > 0.0005)
+                            chain += string.Format(inv, ",adelay=delays={0}:all=1", (long)Math.Round(delay * 1000));
+                        chains.Add(chain + string.Format(inv, "[a{0}]", i));
                     }
-                    // normalize=0 : amix ne doit pas re-pondérer, les gains du mixeur font foi
-                    var filter = audioInputs.Count == 1
-                        ? string.Format(inv, "[1:a:0]volume={0:0.####}[aout]", audioInputs[0].Gain)
-                        : string.Join(";", chains) + ";"
-                          + string.Concat(Enumerable.Range(0, audioInputs.Count).Select(i => $"[a{i}]"))
-                          + string.Format(inv, "amix=inputs={0}:duration=longest:normalize=0[aout]", audioInputs.Count);
+                    // normalize=0 : amix ne doit pas re-pondérer, les gains du mixeur font
+                    // foi. apad + -shortest : l'audio (prises plus courtes que la vidéo…)
+                    // est complété de silence jusqu'à la fin de la vidéo, au lieu que
+                    // -shortest tronque l'export à la fin du dernier son.
+                    var mix = audioInputs.Count == 1
+                        ? "[a0]apad[aout]"
+                        : string.Concat(Enumerable.Range(0, audioInputs.Count).Select(i => $"[a{i}]"))
+                          + string.Format(inv, "amix=inputs={0}:duration=longest:normalize=0,apad[aout]", audioInputs.Count);
                     AddArgs(encoderPsi,
-                        "-filter_complex", filter,
+                        "-filter_complex", string.Join(";", chains) + ";" + mix,
                         "-map", "0:v", "-map", "[aout]",
                         "-c:a", "aac", "-b:a", "192k");
                     audioMapped = true;

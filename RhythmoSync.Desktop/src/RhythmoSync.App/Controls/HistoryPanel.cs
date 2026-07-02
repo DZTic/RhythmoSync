@@ -22,6 +22,12 @@ public sealed class HistoryPanel : ScrollViewer
     private ProjectState? _state;
     private bool _navigating;
 
+    // DialoguesChanged arrive à ~60 Hz pendant un drag : la reconstruction est
+    // coalescée (une seule passe quand le dispatcher respire) et différée tant que
+    // le panneau est masqué — reconstruire 50 boutons par frame coûtait cher.
+    private bool _rebuildQueued;
+    private bool _pendingWhileHidden;
+
     private readonly TextBlock _subtitle;
     private readonly StackPanel _list = new();
 
@@ -51,6 +57,13 @@ public sealed class HistoryPanel : ScrollViewer
 
         root.Children.Add(_list);
         Content = root;
+
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible || !_pendingWhileHidden) return;
+            _pendingWhileHidden = false;
+            RebuildCore();
+        };
     }
 
     public void Initialize(ProjectState state)
@@ -60,7 +73,20 @@ public sealed class HistoryPanel : ScrollViewer
         Rebuild();
     }
 
+    /// <summary>Reconstruction coalescée : plusieurs événements → une seule passe.</summary>
     private void Rebuild()
+    {
+        if (_rebuildQueued) return;
+        _rebuildQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+        {
+            _rebuildQueued = false;
+            if (!IsVisible) { _pendingWhileHidden = true; return; }
+            RebuildCore();
+        }));
+    }
+
+    private void RebuildCore()
     {
         if (_state is null || _navigating) return;
 

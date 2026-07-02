@@ -142,6 +142,18 @@ public class ProjectIoTests : IDisposable
     }
 
     [Fact]
+    public void Save_OverwritesExistingFileWithoutLeavingTemp()
+    {
+        ProjectIo.Save(_path, new ProjectFile { TotalLanes = 2 });
+        ProjectIo.Save(_path, new ProjectFile { TotalLanes = 7 });
+
+        // L'écriture atomique (fichier .tmp puis substitution) ne doit laisser
+        // aucune trace et le contenu final doit être la seconde version.
+        Assert.False(File.Exists(_path + ".tmp"));
+        Assert.Equal(7, ProjectIo.Load(_path).TotalLanes);
+    }
+
+    [Fact]
     public void Load_ThrowsOnNullContent()
     {
         File.WriteAllText(_path, "null");
