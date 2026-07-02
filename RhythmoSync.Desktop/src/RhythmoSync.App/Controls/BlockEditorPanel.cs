@@ -33,6 +33,13 @@ public sealed class BlockEditorPanel : ScrollViewer
     private string? _focusSnapshotId;   // bloc pour lequel un snapshot de focus est déjà pris
     private string? _displayedBlockId;  // bloc actuellement reflété par les champs
 
+    // DialoguesChanged arrive à ~60 Hz pendant un drag et à chaque frappe : le
+    // rafraîchissement est coalescé (une passe quand le dispatcher respire) et différé
+    // si le panneau est masqué — BuildTakesList fait des File.Exists (I/O disque) qu'il
+    // ne faut surtout pas exécuter à chaque frame sur le thread UI.
+    private bool _refreshQueued;
+    private bool _pendingWhileHidden;
+
     // ── Conteneurs ──
     private readonly StackPanel _fields = new();
     private readonly TextBlock _hint;
@@ -280,6 +287,13 @@ public sealed class BlockEditorPanel : ScrollViewer
         root.Children.Add(_fields);
         root.Children.Add(_hint);
         Content = root;
+
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible || !_pendingWhileHidden) return;
+            _pendingWhileHidden = false;
+            RefreshCore();
+        };
     }
 
     public void Initialize(ProjectState state)
@@ -329,7 +343,20 @@ public sealed class BlockEditorPanel : ScrollViewer
         return _state.Dialogues.FirstOrDefault(d => d.Id == id);
     }
 
+    /// <summary>Rafraîchissement coalescé : plusieurs événements → une seule passe.</summary>
     private void Refresh()
+    {
+        if (_refreshQueued) return;
+        _refreshQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+        {
+            _refreshQueued = false;
+            if (!IsVisible) { _pendingWhileHidden = true; return; }
+            RefreshCore();
+        }));
+    }
+
+    private void RefreshCore()
     {
         var block = CurrentBlock();
         if (block is null)

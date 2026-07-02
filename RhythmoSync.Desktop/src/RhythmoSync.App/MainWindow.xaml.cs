@@ -22,6 +22,10 @@ public partial class MainWindow : Window
     private DispatcherTimer? _backupTimer;
     private bool _modifiedSinceBackup;
 
+    // Modifications non enregistrées dans le .rsp : gouverne les confirmations à la
+    // fermeture, à l'ouverture d'un autre projet et au « Nouveau projet ».
+    private bool _dirty;
+
     // ── Horloge de lecture ────────────────────────────────────────────────────
     // MediaElement.Position ne se met à jour que par paliers ; comme dans la
     // version web (rAF + performance.now), on extrapole entre deux paliers avec
@@ -135,6 +139,7 @@ public partial class MainWindow : Window
             if (Math.Abs(ZoomSlider.Value - _state.ZoomLevel) > 0.5) ZoomSlider.Value = _state.ZoomLevel;
             if (Math.Abs(LaneHeightSlider.Value - _state.LaneHeightPx) > 0.5) LaneHeightSlider.Value = _state.LaneHeightPx;
             SnapCheck.IsChecked = _state.SnapEnabled;
+            SyncFpsCombo();
         };
 
         foreach (var fps in new[] { 23.976, 24, 25, 29.97, 30, 50, 60 })
@@ -186,8 +191,10 @@ public partial class MainWindow : Window
 
         // Sauvegardes automatiques : marque « modifié » à chaque changement,
         // écrit une version horodatée à intervalle régulier si nécessaire.
-        _state.DialoguesChanged += () => _modifiedSinceBackup = true;
-        _state.AudioTracksChanged += () => _modifiedSinceBackup = true;
+        // Les marqueurs comptent aussi : ils sont sérialisés dans le projet.
+        _state.DialoguesChanged += () => { _modifiedSinceBackup = true; _dirty = true; };
+        _state.AudioTracksChanged += () => { _modifiedSinceBackup = true; _dirty = true; };
+        _state.MarkersChanged += () => { _modifiedSinceBackup = true; _dirty = true; };
         _backupTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMinutes(Backups.DefaultIntervalMinutes),
@@ -197,6 +204,7 @@ public partial class MainWindow : Window
 
         PreviewKeyDown += OnWindowKeyDown;
         CompositionTarget.Rendering += OnRendering;
+        Closing += OnWindowClosing;
         Closed += (_, _) =>
         {
             CompositionTarget.Rendering -= OnRendering;
@@ -400,6 +408,11 @@ public partial class MainWindow : Window
         _lastMediaPos = -1; // ré-ancrage de l'extrapolation à la prochaine frame
         _mixer?.Seek(time);
         _takeMixer?.Seek(time);
+        // En pause, on fige l'affichage sur la cible (le seek de MediaElement est
+        // asynchrone) : sans ça, l'horloge relisait pendant quelques frames l'ancienne
+        // Media.Position et la tête « revenait » brièvement en arrière — même défaut
+        // que celui déjà corrigé pour le scrub (OnScrubEnded).
+        if (!_isPlaying) _frozenTime = time;
     }
 
     private void OnScrubStarted()
@@ -741,27 +754,75 @@ public partial class MainWindow : Window
     private static string TempRecordingsDir =>
         Path.Combine(Path.GetTempPath(), "RhythmoSync", "recordings");
 
+    /// <summary>Dossier des prises d'un projet enregistré : « &lt;projet&gt;_recordings » à côté du .rsp.</summary>
+    private static string RecordingsDirFor(string projectPath)
+    {
+        var folder = Path.GetDirectoryName(projectPath)!;
+        var name = Path.GetFileNameWithoutExtension(projectPath);
+        return Path.Combine(folder, name + "_recordings");
+    }
+
     /// <summary>Dossier des WAV : à côté du projet si enregistré, sinon dossier temporaire.</summary>
     private string RecordingPathFor(string blockId)
     {
-        string dir;
-        if (_currentProjectPath is { } proj)
-        {
-            var folder = Path.GetDirectoryName(proj)!;
-            var name = Path.GetFileNameWithoutExtension(proj);
-            dir = Path.Combine(folder, name + "_recordings");
-        }
-        else
-        {
-            dir = TempRecordingsDir;
-        }
+        var dir = _currentProjectPath is { } proj ? RecordingsDirFor(proj) : TempRecordingsDir;
         Directory.CreateDirectory(dir);
         // Nom UNIQUE par prise (horodatage) plutôt qu'un nom fixe par bloc : ré-enregistrer
         // un bloc qui a déjà une prise écrirait sinon sur le WAV existant, encore tenu
         // ouvert par le MediaPlayer du TakeMixer (cache de lecture) → le WaveFileWriter
         // échouerait sur fichier verrouillé et l'enregistrement avortait silencieusement.
-        // L'ancienne prise est supprimée après coup dans OnRecordingFinalized.
+        // Les prises remplacées restent sur disque (comparaison A/B/C, undo) ; les WAV
+        // temporaires orphelins sont purgés par CleanupOrphanTempRecordings.
         return Path.Combine(dir, $"{blockId}_{DateTime.Now:yyyyMMddHHmmssfff}.wav");
+    }
+
+    /// <summary>
+    /// À l'enregistrement du projet : déplace les prises encore stockées dans le
+    /// dossier temporaire vers « &lt;projet&gt;_recordings » et met à jour les blocs.
+    /// Sans cette migration, le .rsp référencerait des WAV de %TEMP% que Windows
+    /// peut purger — les prises devenaient « introuvables » plus tard.
+    /// </summary>
+    private void MigrateTempRecordings(string projectPath)
+    {
+        string tempRoot;
+        try { tempRoot = Path.GetFullPath(TempRecordingsDir); } catch { return; }
+
+        var moves = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? targetDir = null;
+        foreach (var take in _state.Dialogues.SelectMany(d => d.TakeList))
+        {
+            if (moves.ContainsKey(take)) continue;
+            string full;
+            try { full = Path.GetFullPath(take); } catch { continue; }
+            if (!full.StartsWith(tempRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!File.Exists(full)) continue;
+            try
+            {
+                targetDir ??= Directory.CreateDirectory(RecordingsDirFor(projectPath)).FullName;
+                var dest = Path.Combine(targetDir, Path.GetFileName(full));
+                File.Copy(full, dest, overwrite: true);
+                moves[take] = dest;
+            }
+            catch { /* copie impossible : la référence temp reste, mieux que rien */ }
+        }
+        if (moves.Count == 0) return;
+
+        var updates = new Dictionary<string, Func<DialogueBlock, DialogueBlock>>();
+        foreach (var d in _state.Dialogues)
+        {
+            if (!d.TakeList.Any(moves.ContainsKey)) continue;
+            var newActive = d.AudioFile is { } active && moves.TryGetValue(active, out var moved)
+                ? moved : d.AudioFile;
+            var newTakes = d.Takes is { Count: > 0 }
+                ? d.Takes.Select(t => moves.TryGetValue(t, out var m) ? m : t).ToList()
+                : null;
+            updates[d.Id] = b => b with { AudioFile = newActive, Takes = newTakes };
+        }
+        // skipHistory : un Ctrl+Z ne doit pas faire re-pointer les blocs vers %TEMP%.
+        _state.UpdateDialogues(updates, skipHistory: true);
+        // Les originaux temporaires ne sont plus référencés : purge best-effort (ceux
+        // encore verrouillés par un player partiront aux prochaines transitions).
+        CleanupOrphanTempRecordings();
     }
 
     /// <summary>
@@ -927,13 +988,30 @@ public partial class MainWindow : Window
 
     private void OnNewProject(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(this, "Les données non sauvegardées seront perdues. Continuer ?",
-                "Nouveau projet", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
+        if (!ConfirmDiscardChanges("Nouveau projet")) return;
         _state.ResetProject();
         _currentProjectPath = null;
+        _dirty = false;
         UnloadVideo();
         CleanupOrphanTempRecordings();   // le projet vidé ne référence plus aucune prise temp
+    }
+
+    /// <summary>
+    /// Vrai si l'action destructrice peut continuer : soit rien n'a été modifié depuis
+    /// le dernier enregistrement, soit l'utilisateur confirme la perte.
+    /// </summary>
+    private bool ConfirmDiscardChanges(string title) =>
+        !_dirty ||
+        MessageBox.Show(this, "Les modifications non enregistrées seront perdues. Continuer ?",
+            title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+    /// <summary>Confirmation avant de quitter avec des modifications non enregistrées.</summary>
+    private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_dirty && MessageBox.Show(this,
+                "Des modifications non enregistrées seront perdues.\nFermer quand même ?",
+                "Quitter RhythmoSync", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            e.Cancel = true;
     }
 
     private void UnloadVideo()
@@ -1105,8 +1183,14 @@ public partial class MainWindow : Window
             return;
         try
         {
-            _state.ImportProject(ProjectIo.Load(entry.Path));
+            var project = ProjectIo.Load(entry.Path);
+            var previousVideo = _state.VideoPath;
+            _state.ImportProject(project);
+            // La vidéo suit la version restaurée (une sauvegarde peut venir d'un autre
+            // projet) : sinon on affichait les blocs restaurés sur l'ancienne vidéo.
+            ApplyProjectVideo(project, previousVideo);
             _modifiedSinceBackup = false;
+            UpdateStatusBar();
             StatusLeft.Text = $"Version restaurée : {entry.Display}";
         }
         catch (Exception ex)
@@ -1118,33 +1202,52 @@ public partial class MainWindow : Window
 
     private void OpenProjectFromPath(string fileName)
     {
+        if (!ConfirmDiscardChanges("Ouvrir un projet")) return;
         try
         {
             var project = ProjectIo.Load(fileName);
+            var previousVideo = _state.VideoPath;
             _state.ImportProject(project);
             _currentProjectPath = fileName;
             _recent.Add(fileName);
             // Retire les prises temp d'une session précédente non enregistrée (celles du
             // projet ouvert, si elles pointent vers le temp, restent car référencées).
             CleanupOrphanTempRecordings();
-
-            if (project.VideoPath is { } videoPath && File.Exists(videoPath))
-            {
-                LoadVideo(videoPath);
-            }
-            else if (project.VideoPath is not null)
-            {
-                UnloadVideo();
-                MessageBox.Show(this,
-                    $"Le projet a été chargé, mais la vidéo associée est introuvable :\n{project.VideoPath}",
-                    "Vidéo manquante", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            ApplyProjectVideo(project, previousVideo);
             UpdateStatusBar();
+            _dirty = false; // l'état vient du disque : rien à re-perdre
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, "Impossible d'ouvrir le projet : " + ex.Message,
                 "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// Charge — ou décharge — la vidéo référencée par un projet importé (ouverture ou
+    /// restauration de version). Sans ce passage, l'ancienne vidéo restait à l'écran
+    /// sous les blocs du nouveau projet.
+    /// </summary>
+    private void ApplyProjectVideo(ProjectFile project, string? previousVideo)
+    {
+        if (project.VideoPath is { } videoPath && File.Exists(videoPath))
+        {
+            // Même vidéo déjà chargée (restauration d'une version du même projet…) :
+            // inutile de recharger le média et de régénérer la forme d'onde.
+            if (!_mediaReady || !string.Equals(videoPath, previousVideo, StringComparison.OrdinalIgnoreCase))
+                LoadVideo(videoPath);
+        }
+        else if (project.VideoPath is not null)
+        {
+            UnloadVideo();
+            MessageBox.Show(this,
+                $"Le projet a été chargé, mais la vidéo associée est introuvable :\n{project.VideoPath}",
+                "Vidéo manquante", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        else
+        {
+            UnloadVideo();
         }
     }
 
@@ -1166,10 +1269,14 @@ public partial class MainWindow : Window
 
         try
         {
+            // Les prises encore dans %TEMP% déménagent d'abord à côté du projet : le
+            // .rsp ne doit jamais référencer des WAV que Windows peut purger.
+            MigrateTempRecordings(path);
             ProjectIo.Save(path, _state.ToProjectFile());
             _currentProjectPath = path;
             _recent.Add(path);
             _modifiedSinceBackup = false; // l'enregistrement réel est aussi un point de reprise
+            _dirty = false;
             StatusLeft.Text = $"Projet enregistré : {Path.GetFileName(path)}";
         }
         catch (Exception ex)
@@ -1187,6 +1294,7 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog(this) != true) return;
         LoadVideo(dialog.FileName);
+        _dirty = true; // le projet référence désormais une vidéo non enregistrée
     }
 
     /// <summary>
@@ -1651,6 +1759,19 @@ public partial class MainWindow : Window
             _state.Fps = fps;
     }
 
+    /// <summary>
+    /// Reflète le FPS de l'état dans le combo — à l'ouverture d'un projet notamment :
+    /// le timecode utilisait le bon FPS mais le combo affichait toujours « 25 », et un
+    /// clic dessus écrasait la valeur du projet.
+    /// </summary>
+    private void SyncFpsCombo()
+    {
+        var fps = _state.Fps.ToString(CultureInfo.InvariantCulture);
+        if (Equals(FpsCombo.SelectedItem, fps)) return;
+        if (!FpsCombo.Items.Contains(fps)) FpsCombo.Items.Add(fps);
+        FpsCombo.SelectedItem = fps;
+    }
+
     private void OnRateChanged(object sender, SelectionChangedEventArgs e)
     {
         if (RateCombo.SelectedItem is string s &&
@@ -1830,7 +1951,12 @@ public partial class MainWindow : Window
             case Key.Delete or Key.Back:
                 if (_state.SelectedIds.Count > 0)
                 {
-                    _state.DeleteDialogues(_state.SelectedIds.ToList());
+                    // Le verrou protège aussi de la suppression accidentelle au clavier.
+                    var deletable = _state.Dialogues
+                        .Where(d => _state.IsSelected(d.Id) && !d.IsLocked)
+                        .Select(d => d.Id).ToList();
+                    if (deletable.Count > 0) _state.DeleteDialogues(deletable);
+                    else StatusLeft.Text = "Bloc(s) verrouillé(s) 🔒 — Ctrl+L pour déverrouiller avant de supprimer.";
                     e.Handled = true;
                 }
                 break;
@@ -1960,10 +2086,14 @@ public partial class MainWindow : Window
 
     private void NudgeSelection(double deltaSeconds)
     {
+        // Les blocs verrouillés ne bougent pas — pas plus au clavier qu'à la souris.
         var updates = new Dictionary<string, Func<DialogueBlock, DialogueBlock>>();
-        foreach (var id in _state.SelectedIds)
-            updates[id] = d => d with { StartTime = Math.Max(0, d.StartTime + deltaSeconds) };
-        _state.UpdateDialogues(updates);
+        foreach (var d in _state.Dialogues)
+        {
+            if (!_state.IsSelected(d.Id) || d.IsLocked) continue;
+            updates[d.Id] = b => b with { StartTime = Math.Max(0, b.StartTime + deltaSeconds) };
+        }
+        if (updates.Count > 0) _state.UpdateDialogues(updates);
     }
 
     private void CopySelection()

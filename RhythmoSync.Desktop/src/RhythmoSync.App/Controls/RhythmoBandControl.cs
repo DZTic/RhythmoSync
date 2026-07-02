@@ -33,6 +33,9 @@ public sealed class RhythmoBandControl : FrameworkElement
 
     private readonly Dictionary<string, BlockVisual> _blockVisuals = [];
     private readonly List<string> _staleIds = [];
+    // Réutilisé à chaque passe de virtualisation : en allouer un neuf à 60 fps
+    // recréait la pression GC que la boucle de rendu s'efforce d'éliminer.
+    private readonly HashSet<string> _visibleIds = [];
 
     private double _time;
     private double _pixelsPerDip = 1.0;
@@ -167,7 +170,8 @@ public sealed class RhythmoBandControl : FrameworkElement
         var t0 = (0 - _scroll.X) / pps - VirtualizeMarginSeconds;
         var t1 = (ActualWidth - _scroll.X) / pps + VirtualizeMarginSeconds;
 
-        var seen = new HashSet<string>();
+        var seen = _visibleIds;
+        seen.Clear();
         var dialogues = _state.Dialogues;
         for (var i = 0; i < dialogues.Count; i++)
         {
@@ -520,12 +524,15 @@ public sealed class RhythmoBandControl : FrameworkElement
     /// web, les graduations correspondent au temps réel sous la ligne de lecture.
     /// Re-rendue uniquement quand la fenêtre visible franchit une graduation.
     /// </summary>
+    // Graduations « rondes » de la règle — statique : UpdateRuler tourne à chaque
+    // frame, allouer ce tableau 60 fois par seconde était du GC gratuit.
+    private static readonly double[] NiceRulerIntervals = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+
     private void UpdateRuler(double pps)
     {
         const double targetTickSpacingPx = 100;
-        double[] niceIntervals = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
         var rawSecsPerTick = targetTickSpacingPx / pps;
-        var secsPerTick = niceIntervals.FirstOrDefault(v => v >= rawSecsPerTick, 300);
+        var secsPerTick = NiceRulerIntervals.FirstOrDefault(v => v >= rawSecsPerTick, 300);
 
         var t0 = Math.Max(0, (0 - _scroll.X) / pps);
         var firstTick = (long)Math.Floor(t0 / secsPerTick);

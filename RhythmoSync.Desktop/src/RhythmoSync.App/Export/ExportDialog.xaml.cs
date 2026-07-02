@@ -51,11 +51,15 @@ public partial class ExportDialog : Window
 
         RangeEndBox.Text = duration.ToString("0.##", CultureInfo.InvariantCulture);
 
-        // La case audio reflète ce qui sera réellement encodé : avec des pistes
-        // externes chargées dans le mixeur, l'export les mixe à l'audio source.
+        // La case audio reflète ce qui sera réellement encodé : pistes externes du
+        // mixeur et prises de doublage actives sont mixées à l'audio source.
         var externalCount = CollectExternalTracks().Count;
-        if (externalCount > 0)
-            AudioCheck.Content = $"Inclure l'audio (mixage : Original + {externalCount} piste(s) du mixeur)";
+        var takeCount = CollectTakes().Count;
+        var extras = new List<string>();
+        if (externalCount > 0) extras.Add($"{externalCount} piste(s) du mixeur");
+        if (takeCount > 0) extras.Add($"{takeCount} prise(s) de doublage");
+        if (extras.Count > 0)
+            AudioCheck.Content = $"Inclure l'audio (mixage : Original + {string.Join(" + ", extras)})";
     }
 
     /// <summary>Pistes externes du mixeur exportables : fichier présent et gain effectif > 0.</summary>
@@ -65,6 +69,29 @@ public partial class ExportDialog : Window
             .Select(t => new ExternalAudioTrack(t.Url!, _state.EffectiveTrackVolume(t)))
             .Where(t => t.Gain > 0)
             .ToList();
+
+    /// <summary>
+    /// Prises de doublage actives à exporter, calées sur leur bloc. Le gain suit la
+    /// piste « Voix » du mixeur — même règle que la lecture (TakeMixer) : ce qu'on
+    /// entend dans l'app est ce qu'on obtient dans le fichier.
+    /// </summary>
+    private List<TakeAudioClip> CollectTakes()
+    {
+        var gain = VoiceTrackGain();
+        if (gain <= 0) return [];
+        return _state.Dialogues
+            .Where(d => d.AudioFile is { Length: > 0 } file && File.Exists(file))
+            .Select(d => new TakeAudioClip(d.AudioFile!, d.StartTime, gain))
+            .ToList();
+    }
+
+    /// <summary>Gain effectif de la piste « Voix » (mute/solo résolus), ou 1 si absente.</summary>
+    private double VoiceTrackGain()
+    {
+        var voix = _state.AudioTracks.FirstOrDefault(t => t.Id == "voix")
+                   ?? _state.AudioTracks.FirstOrDefault(t => string.Equals(t.Name, "Voix", StringComparison.OrdinalIgnoreCase));
+        return voix is null ? 1.0 : _state.EffectiveTrackVolume(voix);
+    }
 
     // ── Options ────────────────────────────────────────────────────────────────
 
@@ -193,6 +220,7 @@ public partial class ExportDialog : Window
                 OriginalAudioGain = _state.AudioTracks.FirstOrDefault(t => t.IsOriginal) is { } original
                     ? _state.EffectiveTrackVolume(original) : 1.0,
                 ExternalAudioTracks = CollectExternalTracks(),
+                Takes = CollectTakes(),
                 ForceCpuEncoder = forceCpu,
                 Title = $"{videoName} — RhythmoSync Master",
                 Comment = $"Bande rythmo : {actualLanes} piste(s), {dialogues.Count} bloc(s) — {resolutionLabel} @ {_state.Fps}fps",

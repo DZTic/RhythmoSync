@@ -93,10 +93,13 @@ public static class SubtitleIo
     private static string FormatTimestamp(double seconds, char separator)
     {
         if (seconds < 0) seconds = 0;
-        var h = (int)(seconds / 3600);
-        var m = (int)(seconds % 3600 / 60);
-        var s = (int)(seconds % 60);
-        var ms = (int)(seconds % 1 * 1000);
+        // Arrondi sur le total en millisecondes : décomposer champ par champ tronquait
+        // (1,1 s → « 099 » ms au lieu de « 100 » à cause de la représentation binaire).
+        var totalMs = (long)Math.Round(seconds * 1000);
+        var h = totalMs / 3_600_000;
+        var m = totalMs / 60_000 % 60;
+        var s = totalMs / 1000 % 60;
+        var ms = totalMs % 1000;
         return $"{h:00}:{m:00}:{s:00}{separator}{ms:000}";
     }
 
@@ -208,14 +211,16 @@ public static class SubtitleIo
         return blocks;
     }
 
-    // « 00:00:00,000 »
+    // « 00:00:00,000 » — certains outils écrivent les millisecondes avec un point
+    // (« 00:00:00.000 ») : les deux séparateurs sont acceptés, sinon tous les temps
+    // retomberaient silencieusement à 0.
     private static double ParseSrtTime(string timeStr)
     {
         var parts = timeStr.Trim().Split(':');
         if (parts.Length != 3) return 0;
-        var secMs = parts[2].Split(',');
-        if (secMs.Length != 2) return 0;
-        return Num(parts[0]) * 3600 + Num(parts[1]) * 60 + Num(secMs[0]) + Num(secMs[1]) / 1000.0;
+        var secMs = parts[2].Split(',', '.');
+        var seconds = secMs.Length == 2 ? Num(secMs[0]) + Num(secMs[1]) / 1000.0 : Num(parts[2]);
+        return Num(parts[0]) * 3600 + Num(parts[1]) * 60 + seconds;
     }
 
     // « HH:MM:SS.mmm » ou « MM:SS.mmm »
