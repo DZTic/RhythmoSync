@@ -423,4 +423,15 @@ public class ProjectStateTests
         Assert.Equal("hello", restored.Dialogues[0].Text);
         Assert.False(restored.CanUndo); // l'historique est réinitialisé à l'import
     }
+
+    [Fact]
+    public void Fps_CanBeCustomizedAndPreserved()
+    {
+        var s = new ProjectState();
+        Assert.Equal(25, s.Fps);
+        s.Fps = 23.976;
+        Assert.Equal(23.976, s.Fps);
+        s.Fps = 60.0;
+        Assert.Equal(60.0, s.Fps);
+    }
 }

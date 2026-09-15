@@ -898,6 +898,11 @@ public partial class MainWindow : Window
                     try { _videoInfo = await VideoProber.ProbeAsync(_ffmpegPath, original); }
                     catch { }
                 }
+                if (_videoInfo is { Fps: > 0 })
+                {
+                    _state.Fps = _videoInfo.Fps;
+                    SyncFpsCombo();
+                }
                 await LoadViaProxyAsync(original);
                 return;
             }
@@ -1319,6 +1324,12 @@ public partial class MainWindow : Window
             catch { /* sonde indisponible : tentative native, MediaFailed couvrira */ }
         }
 
+        if (_videoInfo is { Fps: > 0 })
+        {
+            _state.Fps = _videoInfo.Fps;
+            SyncFpsCombo();
+        }
+
         if (_videoInfo is { NeedsProxy: true })
             await LoadViaProxyAsync(path);
         else
@@ -1486,7 +1497,7 @@ public partial class MainWindow : Window
 
         if (_isPlaying) TogglePlay();
         var dialog = new Export.ExportDialog(_state, _state.VideoPath, _ffmpegPath!,
-            _duration, nativeWidth, nativeHeight)
+            _duration, nativeWidth, nativeHeight, _videoInfo?.Fps ?? _state.Fps)
         {
             Owner = this,
         };

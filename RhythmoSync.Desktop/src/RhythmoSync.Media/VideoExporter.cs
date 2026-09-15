@@ -235,7 +235,7 @@ public static class VideoExporter
             "-i", s.VideoPath,
             "-t", rangeDuration.ToString("0.######", inv),
             "-vf", string.Format(inv,
-                "crop={0}:{1}:0:{2},scale={3}:{4}:force_original_aspect_ratio=decrease,pad={3}:{4}:(ow-iw)/2:(oh-ih)/2,fps={5}",
+                "setpts=PTS-STARTPTS,crop={0}:{1}:0:{2},scale={3}:{4}:force_original_aspect_ratio=decrease,pad={3}:{4}:(ow-iw)/2:(oh-ih)/2,fps={5}",
                 s.VideoWidth, cropH, s.CropTop, s.ExportWidth, s.VideoRenderHeight, s.Fps),
             "-f", "rawvideo", "-pix_fmt", "bgra", "-an",
             "pipe:1");
@@ -427,7 +427,7 @@ public static class VideoExporter
 
                 // Partie basse : section défilante de la bande (copies de segments par ligne)
                 var time = s.StartTime + frameCount / s.Fps;
-                var stripX = (int)((time + s.SyncOffsetEffective) * s.Pps);
+                var stripX = (int)Math.Floor((time + s.SyncOffsetEffective) * s.Pps);
                 ComposeBandRows(outFrame, s, band, Tile, stripX, darkRow);
 
                 // Ligne de synchro rouge (2 px) par-dessus la bande
