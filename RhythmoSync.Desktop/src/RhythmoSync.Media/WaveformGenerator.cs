@@ -14,12 +14,19 @@ public sealed record WaveformData(float[] Peaks, double Duration, int SampleRate
 /// </summary>
 public static class WaveformGenerator
 {
+    /// <summary>
+    /// Fréquence cible optimale pour l'analyse d'enveloppe de forme d'onde.
+    /// 8 000 Hz mono capture l'intégralité du spectre de dynamique audio utile tout en
+    /// divisant par 6 le volume de données transitant depuis FFmpeg et le temps CPU en C#.
+    /// </summary>
+    public const int TargetSampleRate = 8000;
+
     public static async Task<WaveformData> GenerateAsync(
         string ffmpegPath, string mediaPath, int numSamples, CancellationToken ct = default)
     {
         numSamples = Math.Clamp(numSamples, 128, 65536);
 
-        var (duration, sampleRate) = await ProbeAsync(ffmpegPath, mediaPath, ct);
+        var (duration, _) = await ProbeAsync(ffmpegPath, mediaPath, ct);
 
         var psi = new ProcessStartInfo(ffmpegPath)
         {
@@ -32,7 +39,7 @@ public static class WaveformGenerator
         psi.ArgumentList.Add("-loglevel"); psi.ArgumentList.Add("error");
         psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(mediaPath);
         psi.ArgumentList.Add("-ac"); psi.ArgumentList.Add("1");          // mono
-        psi.ArgumentList.Add("-ar"); psi.ArgumentList.Add(sampleRate.ToString(CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add("-ar"); psi.ArgumentList.Add(TargetSampleRate.ToString(CultureInfo.InvariantCulture));
         psi.ArgumentList.Add("-f"); psi.ArgumentList.Add("s16le");       // PCM brut 16 bits LE
         psi.ArgumentList.Add("-vn");
         psi.ArgumentList.Add("pipe:1");
@@ -41,7 +48,7 @@ public static class WaveformGenerator
             ?? throw new InvalidOperationException("Impossible de démarrer FFmpeg.");
         _ = process.StandardError.ReadToEndAsync(ct); // drainer stderr pour éviter le blocage du pipe
 
-        var totalSamples = Math.Max(1L, (long)(duration * sampleRate));
+        var totalSamples = Math.Max(1L, (long)(duration * TargetSampleRate));
         var samplesPerBucket = Math.Max(1.0, totalSamples / (double)numSamples);
 
         var peaks = new float[numSamples * 2];
@@ -85,7 +92,7 @@ public static class WaveformGenerator
         if (sampleIndex < 1)
             throw new InvalidDataException("Aucune donnée audio trouvée dans le fichier.");
 
-        return new WaveformData(peaks, duration, sampleRate);
+        return new WaveformData(peaks, duration, TargetSampleRate);
 
         void Accumulate(short sample)
         {
