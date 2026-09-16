@@ -23,7 +23,8 @@ public sealed record ExportLayout
         int nativeWidth, int croppedNativeHeight,
         double bandStripHeight, double bandScale,
         double zoomLevel, double syncLineX,
-        int exportWidth = 1920, int exportHeight = 1080)
+        int exportWidth = 1920, int exportHeight = 1080,
+        double? fps = null)
     {
         // Dimensions paires exigées par l'encodeur
         exportWidth -= exportWidth % 2;
@@ -54,6 +55,20 @@ public sealed record ExportLayout
         }
 
         var laneScale = bandRenderHeight / bandStripHeight;
+        var exportPps = zoomLevel * laneScale;
+
+        // Harmonisation du pas spatial (ExportPps / fps) en pixels entiers par trame
+        // pour supprimer tout judder temporel ou micro-saccades de pixel (ex: 5px puis 6px)
+        if (fps.HasValue && fps.Value > 0)
+        {
+            var rawPxPerFrame = exportPps / fps.Value;
+            var roundedPxPerFrame = Math.Round(rawPxPerFrame);
+            if (roundedPxPerFrame >= 1.0)
+            {
+                exportPps = roundedPxPerFrame * fps.Value;
+            }
+        }
+
         return new ExportLayout
         {
             ExportWidth = exportWidth,
@@ -61,7 +76,7 @@ public sealed record ExportLayout
             VideoRenderHeight = videoRenderHeight,
             BandRenderHeight = bandRenderHeight,
             LaneScale = laneScale,
-            ExportPps = zoomLevel * laneScale,
+            ExportPps = exportPps,
             SyncLineX = (int)Math.Round(syncLineX * laneScale),
         };
     }

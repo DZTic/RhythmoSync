@@ -215,7 +215,8 @@ public partial class ExportDialog : Window
             var layout = ExportLayout.Compute(
                 _nativeWidth, cropBottom - cropTop,
                 bandStripHeight, bandScale,
-                _state.ZoomLevel, RhythmoConstants.SyncLinePositionX);
+                _state.ZoomLevel, RhythmoConstants.SyncLinePositionX,
+                fps: selectedFps);
 
             // 3. Bande en tuiles, même style que l'écran (mode propre)
             ProgressLeft.Text = "Pré-rendu de la bande rythmo…";
