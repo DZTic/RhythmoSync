@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Threading.Channels;
 
 namespace RhythmoSync.Media;
 
@@ -367,8 +368,6 @@ public static class VideoExporter
 
             var videoFrameSize = s.ExportWidth * s.VideoRenderHeight * 4;
             var outFrameSize = s.ExportWidth * s.ExportHeight * 4;
-            var videoBuf = new byte[videoFrameSize];
-            var outFrame = new byte[outFrameSize];
             var lastProgress = Stopwatch.StartNew();
 
             // Cache séquentiel de tuiles (l'accès avance toujours vers la droite)
@@ -394,48 +393,142 @@ public static class VideoExporter
 
             var spans = new BandSpan[16];
 
-            while (true)
+            // Pipeline concurrent à 3 étages avec System.Threading.Channels et pool de buffers recyclés
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var pipelineCt = linkedCts.Token;
+
+            const int poolSize = 6;
+            var bufferPool = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(poolSize)
             {
-                ct.ThrowIfCancellationRequested();
-
-                // Lire une frame vidéo décodée complète
-                var read = 0;
-                while (read < videoFrameSize)
-                {
-                    var n = await input.ReadAsync(videoBuf.AsMemory(read, videoFrameSize - read), ct);
-                    if (n == 0) break;
-                    read += n;
-                }
-                if (read == 0) break;
-                if (read < videoFrameSize)
-                    throw new IOException($"Frame incomplète du décodeur ({read}/{videoFrameSize} octets) à la frame {frameCount}.");
-
-                // Partie haute : la vidéo telle quelle
-                Buffer.BlockCopy(videoBuf, 0, outFrame, 0, videoFrameSize);
-
-                // Partie basse : section défilante de la bande (copies de segments par ligne)
-                var time = s.StartTime + frameCount / s.Fps;
-                var stripX = (int)Math.Floor((time + s.SyncOffsetEffective) * s.Pps);
-                ComposeBandRows(outFrame, s, band, Tile, stripX, darkRow, spans);
-
-                // Ligne de synchro rouge (2 px) par-dessus la bande
-                DrawSyncLine(outFrame, s);
-
-                await output.WriteAsync(outFrame.AsMemory(0, outFrameSize), ct);
-                frameCount++;
-
-                if (lastProgress.ElapsedMilliseconds > 500)
-                {
-                    var elapsed = stopwatch.Elapsed.TotalSeconds;
-                    var fpsEff = frameCount / Math.Max(0.001, elapsed);
-                    var remFrames = totalFrames > frameCount ? totalFrames - frameCount : 0;
-                    var remSecs = remFrames / Math.Max(0.001, fpsEff);
-                    var percent = (int)Math.Min(100, frameCount * 100.0 / totalFrames);
-                    progress?.Report(new ExportProgressInfo(percent, fpsEff, $"{(int)(remSecs / 60)}m {(int)(remSecs % 60)}s"));
-                    lastProgress.Restart();
-                }
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = false
+            });
+            for (var i = 0; i < poolSize; i++)
+            {
+                bufferPool.Writer.TryWrite(new byte[outFrameSize]);
             }
 
+            var decodedChannel = Channel.CreateBounded<(byte[] Buffer, uint FrameIndex)>(new BoundedChannelOptions(2)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = true
+            });
+
+            var composedChannel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(2)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = true
+            });
+
+            // Étage 1 : Décodage continu directement dans la région vidéo du buffer de trame (0 allocation, 0 copie)
+            var decodeTask = Task.Run(async () =>
+            {
+                uint index = 0;
+                try
+                {
+                    while (true)
+                    {
+                        pipelineCt.ThrowIfCancellationRequested();
+                        var buf = await bufferPool.Reader.ReadAsync(pipelineCt);
+                        var read = 0;
+                        while (read < videoFrameSize)
+                        {
+                            var n = await input.ReadAsync(buf.AsMemory(read, videoFrameSize - read), pipelineCt);
+                            if (n == 0) break;
+                            read += n;
+                        }
+                        if (read == 0)
+                        {
+                            // Fin de flux normale (EOF décodeur)
+                            await bufferPool.Writer.WriteAsync(buf, CancellationToken.None);
+                            break;
+                        }
+                        if (read < videoFrameSize)
+                            throw new IOException($"Frame incomplète du décodeur ({read}/{videoFrameSize} octets) à la frame {index}.");
+
+                        await decodedChannel.Writer.WriteAsync((buf, index), pipelineCt);
+                        index++;
+                    }
+                    decodedChannel.Writer.Complete();
+                }
+                catch (Exception ex)
+                {
+                    decodedChannel.Writer.TryComplete(ex);
+                    try { linkedCts.Cancel(); } catch { }
+                    throw;
+                }
+            }, pipelineCt);
+
+            // Étage 2 : Composition de la bande rythmo C# en parallèle sur les cœurs CPU
+            var composeTask = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await decodedChannel.Reader.WaitToReadAsync(pipelineCt))
+                    {
+                        while (decodedChannel.Reader.TryRead(out var item))
+                        {
+                            pipelineCt.ThrowIfCancellationRequested();
+                            var (buf, idx) = item;
+
+                            var time = s.StartTime + idx / s.Fps;
+                            var stripX = (int)Math.Floor((time + s.SyncOffsetEffective) * s.Pps);
+                            ComposeBandRows(buf, s, band, Tile, stripX, darkRow, spans);
+                            DrawSyncLine(buf, s);
+
+                            await composedChannel.Writer.WriteAsync(buf, pipelineCt);
+                        }
+                    }
+                    composedChannel.Writer.Complete();
+                }
+                catch (Exception ex)
+                {
+                    composedChannel.Writer.TryComplete(ex);
+                    try { linkedCts.Cancel(); } catch { }
+                    throw;
+                }
+            }, pipelineCt);
+
+            // Étage 3 : Encodage continu sur le stdin de FFmpeg et recyclage immédiat des tampons
+            var encodeTask = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await composedChannel.Reader.WaitToReadAsync(pipelineCt))
+                    {
+                        while (composedChannel.Reader.TryRead(out var buf))
+                        {
+                            pipelineCt.ThrowIfCancellationRequested();
+                            await output.WriteAsync(buf.AsMemory(0, outFrameSize), pipelineCt);
+                            frameCount++;
+
+                            // Recyclage immédiat du buffer vers le pool
+                            await bufferPool.Writer.WriteAsync(buf, pipelineCt);
+
+                            if (lastProgress.ElapsedMilliseconds > 500)
+                            {
+                                var elapsed = stopwatch.Elapsed.TotalSeconds;
+                                var fpsEff = frameCount / Math.Max(0.001, elapsed);
+                                var remFrames = totalFrames > frameCount ? totalFrames - frameCount : 0;
+                                var remSecs = remFrames / Math.Max(0.001, fpsEff);
+                                var percent = (int)Math.Min(100, frameCount * 100.0 / totalFrames);
+                                progress?.Report(new ExportProgressInfo(percent, fpsEff, $"{(int)(remSecs / 60)}m {(int)(remSecs % 60)}s"));
+                                lastProgress.Restart();
+                            }
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    try { linkedCts.Cancel(); } catch { }
+                    throw;
+                }
+            }, pipelineCt);
+
+            await Task.WhenAll(decodeTask, composeTask, encodeTask);
             output.Close(); // EOF → l'encodeur finalise le MP4
         }
         catch (OperationCanceledException)
