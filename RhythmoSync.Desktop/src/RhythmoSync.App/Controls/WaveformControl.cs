@@ -23,7 +23,10 @@ public sealed class WaveformControl : FrameworkElement
     private readonly ContainerVisual _movingRoot = new();
     private readonly DrawingVisual _syncOverlay = new();
     private readonly TranslateTransform _scroll = new();
+    private const int MaxLruCapacity = 32;
     private readonly Dictionary<int, DrawingVisual> _tiles = [];
+    private readonly Dictionary<int, DrawingVisual> _lruCache = [];
+    private readonly LinkedList<int> _lruOrder = [];
 
     private WaveformData? _data;
     private double _time;
@@ -72,7 +75,45 @@ public sealed class WaveformControl : FrameworkElement
     {
         _movingRoot.Children.Clear();
         _tiles.Clear();
+        _lruCache.Clear();
+        _lruOrder.Clear();
         _renderedPps = _state?.ZoomLevel ?? -1;
+    }
+
+    private DrawingVisual GetOrCreateTile(int index, double pps)
+    {
+        if (_lruCache.TryGetValue(index, out var cachedVisual))
+        {
+            _lruOrder.Remove(index);
+            _lruOrder.AddLast(index);
+            return cachedVisual;
+        }
+
+        var visual = RenderTile(index, pps);
+        _lruCache[index] = visual;
+        _lruOrder.AddLast(index);
+
+        while (_lruOrder.Count > MaxLruCapacity)
+        {
+            var candidateNode = _lruOrder.First;
+            var evicted = false;
+            while (candidateNode != null)
+            {
+                var candidateIndex = candidateNode.Value;
+                if (!_tiles.ContainsKey(candidateIndex))
+                {
+                    _lruCache.Remove(candidateIndex);
+                    _lruOrder.Remove(candidateNode);
+                    evicted = true;
+                    break;
+                }
+                candidateNode = candidateNode.Next;
+            }
+
+            if (!evicted) break;
+        }
+
+        return visual;
     }
 
     public void UpdateTime(double time)
@@ -104,7 +145,7 @@ public sealed class WaveformControl : FrameworkElement
         for (var i = firstTile; i <= lastTile; i++)
         {
             if (_tiles.ContainsKey(i)) continue;
-            var tile = RenderTile(i, pps);
+            var tile = GetOrCreateTile(i, pps);
             _tiles[i] = tile;
             _movingRoot.Children.Add(tile);
         }
