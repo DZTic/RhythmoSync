@@ -12,6 +12,8 @@ public sealed record WaveformData(float[] Peaks, double Duration, int SampleRate
 /// fil de l'eau — contrairement à la version Rust, on ne charge jamais tout le PCM
 /// en mémoire (une vidéo de 2 h ≈ 600 Mo de PCM).
 /// </summary>
+public static class WaveformGenerator
+{
     /// <summary>
     /// Fréquence cible optimale pour l'analyse d'enveloppe de forme d'onde.
     /// 8 000 Hz mono capture l'intégralité du spectre de dynamique audio utile tout en
