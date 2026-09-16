@@ -130,111 +130,215 @@ public static class SubtitleIo
     public static List<DialogueBlock> ParseSrt(string content)
     {
         var blocks = new List<DialogueBlock>();
-        var chunks = content.Replace("\r\n", "\n").Split("\n\n");
-        foreach (var chunk in chunks)
-        {
-            var lines = chunk.Split('\n');
-            if (lines.Length < 3) continue;
+        if (string.IsNullOrWhiteSpace(content)) return blocks;
 
-            var timeIdx = 1;
-            if (!lines[1].Contains("-->"))
+        var sb = new StringBuilder();
+        double currentStart = 0;
+        double currentEnd = 0;
+        bool hasTiming = false;
+
+        foreach (var lineSpan in MemoryExtensions.EnumerateLines(content.AsSpan()))
+        {
+            var trimmed = lineSpan.Trim();
+            if (trimmed.IsEmpty)
             {
-                timeIdx = 0;
-                if (!lines[0].Contains("-->")) continue;
+                if (hasTiming)
+                {
+                    FlushBlock(blocks, sb, currentStart, currentEnd, "#8b5cf6");
+                    hasTiming = false;
+                }
+                continue;
             }
 
-            var parts = lines[timeIdx].Split("-->");
-            if (parts.Length < 2) continue;
-
-            var start = ParseSrtTime(parts[0]);
-            var end = ParseSrtTime(parts[1]);
-            var text = string.Join("\n", lines[(timeIdx + 1)..]).Trim();
-
-            blocks.Add(new DialogueBlock
+            var arrowIdx = trimmed.IndexOf("-->".AsSpan(), StringComparison.Ordinal);
+            if (arrowIdx >= 0)
             {
-                Text = text,
-                StartTime = start,
-                Duration = Math.Max(0.1, end - start),
-                CharacterName = "Import",
-                Color = "#8b5cf6",
-                Lane = 0,
-            });
+                if (hasTiming)
+                {
+                    FlushBlock(blocks, sb, currentStart, currentEnd, "#8b5cf6");
+                }
+
+                var left = trimmed.Slice(0, arrowIdx).Trim();
+                var right = trimmed.Slice(arrowIdx + 3).Trim();
+
+                currentStart = ParseSrtTime(left);
+                currentEnd = ParseSrtTime(right);
+                hasTiming = true;
+                sb.Clear();
+                continue;
+            }
+
+            if (hasTiming)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(trimmed);
+            }
         }
+
+        if (hasTiming)
+        {
+            FlushBlock(blocks, sb, currentStart, currentEnd, "#8b5cf6");
+        }
+
         return blocks;
     }
 
     public static List<DialogueBlock> ParseVtt(string content)
     {
         var blocks = new List<DialogueBlock>();
-        var lines = content.Replace("\r\n", "\n").Split('\n');
+        if (string.IsNullOrWhiteSpace(content)) return blocks;
 
-        var i = 0;
-        if (lines.Length > 0 && lines[0].StartsWith("WEBVTT")) i++;
+        var sb = new StringBuilder();
+        double currentStart = 0;
+        double currentEnd = 0;
+        bool hasTiming = false;
+        bool seenHeader = false;
 
-        while (i < lines.Length)
+        foreach (var lineSpan in MemoryExtensions.EnumerateLines(content.AsSpan()))
         {
-            var line = lines[i].Trim();
-            if (line.Length == 0) { i++; continue; }
-
-            if (line.Contains("-->"))
+            var trimmed = lineSpan.Trim();
+            if (!seenHeader)
             {
-                var parts = line.Split("-->");
-                if (parts.Length >= 2)
+                if (trimmed.StartsWith("WEBVTT".AsSpan(), StringComparison.OrdinalIgnoreCase))
                 {
-                    var start = ParseVttTime(parts[0]);
-                    // Retire les éventuelles options d'alignement (« align:center » …)
-                    var endToken = parts[1].Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-                    var end = ParseVttTime(endToken);
-
-                    i++;
-                    var sb = new StringBuilder();
-                    while (i < lines.Length && lines[i].Trim().Length > 0)
-                    {
-                        sb.Append(lines[i]).Append('\n');
-                        i++;
-                    }
-
-                    blocks.Add(new DialogueBlock
-                    {
-                        Text = sb.ToString().Trim(),
-                        StartTime = start,
-                        Duration = Math.Max(0.1, end - start),
-                        CharacterName = "Import",
-                        Color = "#10b981",
-                        Lane = 0,
-                    });
+                    seenHeader = true;
+                    continue;
                 }
-                else i++;
+                if (!trimmed.IsEmpty)
+                {
+                    seenHeader = true;
+                }
             }
-            else i++;
+
+            if (trimmed.IsEmpty)
+            {
+                if (hasTiming)
+                {
+                    FlushBlock(blocks, sb, currentStart, currentEnd, "#10b981");
+                    hasTiming = false;
+                }
+                continue;
+            }
+
+            var arrowIdx = trimmed.IndexOf("-->".AsSpan(), StringComparison.Ordinal);
+            if (arrowIdx >= 0)
+            {
+                if (hasTiming)
+                {
+                    FlushBlock(blocks, sb, currentStart, currentEnd, "#10b981");
+                }
+
+                var left = trimmed.Slice(0, arrowIdx).Trim();
+                var right = trimmed.Slice(arrowIdx + 3).Trim();
+
+                var firstSpace = right.IndexOfAny(' ', '\t');
+                var endToken = firstSpace >= 0 ? right.Slice(0, firstSpace) : right;
+
+                currentStart = ParseVttTime(left);
+                currentEnd = ParseVttTime(endToken);
+                hasTiming = true;
+                sb.Clear();
+                continue;
+            }
+
+            if (hasTiming)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(trimmed);
+            }
         }
+
+        if (hasTiming)
+        {
+            FlushBlock(blocks, sb, currentStart, currentEnd, "#10b981");
+        }
+
         return blocks;
+    }
+
+    private static void FlushBlock(List<DialogueBlock> blocks, StringBuilder sb, double start, double end, string color)
+    {
+        var text = sb.ToString().Trim();
+        blocks.Add(new DialogueBlock
+        {
+            Text = text,
+            StartTime = start,
+            Duration = Math.Max(0.1, end - start),
+            CharacterName = "Import",
+            Color = color,
+            Lane = 0,
+        });
+        sb.Clear();
     }
 
     // « 00:00:00,000 » — certains outils écrivent les millisecondes avec un point
     // (« 00:00:00.000 ») : les deux séparateurs sont acceptés, sinon tous les temps
     // retomberaient silencieusement à 0.
-    private static double ParseSrtTime(string timeStr)
+    private static double ParseSrtTime(ReadOnlySpan<char> span)
     {
-        var parts = timeStr.Trim().Split(':');
-        if (parts.Length != 3) return 0;
-        var secMs = parts[2].Split(',', '.');
-        var seconds = secMs.Length == 2 ? Num(secMs[0]) + Num(secMs[1]) / 1000.0 : Num(parts[2]);
-        return Num(parts[0]) * 3600 + Num(parts[1]) * 60 + seconds;
+        span = span.Trim();
+        var firstColon = span.IndexOf(':');
+        if (firstColon < 0) return 0;
+        var secondColon = span.Slice(firstColon + 1).IndexOf(':');
+        if (secondColon < 0) return 0;
+        secondColon += firstColon + 1;
+
+        var hSpan = span.Slice(0, firstColon);
+        var mSpan = span.Slice(firstColon + 1, secondColon - firstColon - 1);
+        var sSpan = span.Slice(secondColon + 1);
+
+        if (!double.TryParse(hSpan, NumberStyles.Float, Inv, out var hours) ||
+            !double.TryParse(mSpan, NumberStyles.Float, Inv, out var minutes))
+        {
+            return 0;
+        }
+
+        var sepIdx = sSpan.IndexOfAny(',', '.');
+        double seconds;
+        if (sepIdx >= 0)
+        {
+            var secIntSpan = sSpan.Slice(0, sepIdx);
+            var msSpan = sSpan.Slice(sepIdx + 1);
+            double.TryParse(secIntSpan, NumberStyles.Float, Inv, out var sec);
+            double.TryParse(msSpan, NumberStyles.Float, Inv, out var ms);
+            seconds = sec + ms / 1000.0;
+        }
+        else
+        {
+            double.TryParse(sSpan, NumberStyles.Float, Inv, out seconds);
+        }
+
+        return hours * 3600 + minutes * 60 + seconds;
     }
 
     // « HH:MM:SS.mmm » ou « MM:SS.mmm »
-    private static double ParseVttTime(string timeStr)
+    private static double ParseVttTime(ReadOnlySpan<char> span)
     {
-        var parts = timeStr.Trim().Split(':');
-        return parts.Length switch
-        {
-            3 => Num(parts[0]) * 3600 + Num(parts[1]) * 60 + Num(parts[2]),
-            2 => Num(parts[0]) * 60 + Num(parts[1]),
-            _ => 0,
-        };
-    }
+        span = span.Trim();
+        var firstColon = span.IndexOf(':');
+        if (firstColon < 0) return 0;
 
-    private static double Num(string s) =>
-        double.TryParse(s.Trim(), NumberStyles.Float, Inv, out var v) ? v : 0;
+        var secondColon = span.Slice(firstColon + 1).IndexOf(':');
+        if (secondColon >= 0)
+        {
+            secondColon += firstColon + 1;
+            var hSpan = span.Slice(0, firstColon);
+            var mSpan = span.Slice(firstColon + 1, secondColon - firstColon - 1);
+            var sSpan = span.Slice(secondColon + 1);
+
+            double.TryParse(hSpan, NumberStyles.Float, Inv, out var h);
+            double.TryParse(mSpan, NumberStyles.Float, Inv, out var m);
+            double.TryParse(sSpan, NumberStyles.Float, Inv, out var s);
+            return h * 3600 + m * 60 + s;
+        }
+        else
+        {
+            var mSpan = span.Slice(0, firstColon);
+            var sSpan = span.Slice(firstColon + 1);
+
+            double.TryParse(mSpan, NumberStyles.Float, Inv, out var m);
+            double.TryParse(sSpan, NumberStyles.Float, Inv, out var s);
+            return m * 60 + s;
+        }
+    }
 }
