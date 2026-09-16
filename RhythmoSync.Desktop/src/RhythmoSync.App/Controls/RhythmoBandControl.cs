@@ -165,6 +165,31 @@ public sealed class RhythmoBandControl : FrameworkElement
         UpdateRuler(pps);
     }
 
+    private const double VirtualizeLookbackSeconds = 60.0;
+
+    private static int FindDialogueStartIndex(IReadOnlyList<DialogueBlock> dialogues, double minStartTime)
+    {
+        int low = 0;
+        int high = dialogues.Count - 1;
+        int result = 0;
+
+        while (low <= high)
+        {
+            int mid = low + (high - low) / 2;
+            if (dialogues[mid].StartTime >= minStartTime)
+            {
+                result = mid;
+                high = mid - 1;
+            }
+            else
+            {
+                low = mid + 1;
+            }
+        }
+
+        return result;
+    }
+
     private void VirtualizePass(double pps)
     {
         var t0 = (0 - _scroll.X) / pps - VirtualizeMarginSeconds;
@@ -173,9 +198,19 @@ public sealed class RhythmoBandControl : FrameworkElement
         var seen = _visibleIds;
         seen.Clear();
         var dialogues = _state.Dialogues;
-        for (var i = 0; i < dialogues.Count; i++)
+        if (dialogues.Count == 0)
+        {
+            CleanupStaleVisuals(seen);
+            return;
+        }
+
+        var isSorted = dialogues.Count < 2 || dialogues[0].StartTime <= dialogues[^1].StartTime;
+        var startIndex = isSorted ? FindDialogueStartIndex(dialogues, t0 - VirtualizeLookbackSeconds) : 0;
+
+        for (var i = startIndex; i < dialogues.Count; i++)
         {
             var block = dialogues[i];
+            if (isSorted && block.StartTime > t1) break;
             if (block.EndTime < t0 || block.StartTime > t1) continue;
             seen.Add(block.Id);
 
@@ -201,6 +236,11 @@ public sealed class RhythmoBandControl : FrameworkElement
         }
 
         // Démontage des visuels hors champ (libère la mémoire GPU, comme le tiling web)
+        CleanupStaleVisuals(seen);
+    }
+
+    private void CleanupStaleVisuals(HashSet<string> seen)
+    {
         _staleIds.Clear();
         foreach (var id in _blockVisuals.Keys)
             if (!seen.Contains(id)) _staleIds.Add(id);
