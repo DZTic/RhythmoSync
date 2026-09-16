@@ -942,6 +942,14 @@ public partial class MainWindow : Window
             // _duration vaut 0 quand on démarre pendant l'encodage du proxy → sonde
             var knownDuration = _duration > 0 ? _duration : _videoInfo?.Duration ?? 0;
             var numSamples = (int)Math.Clamp(knownDuration * 40, 2000, 65536);
+
+            if (WaveformGenerator.TryLoadFromDiskCache(videoPath, numSamples) is { } cached)
+            {
+                Wave.SetWaveform(cached);
+                StatusLeft.Text = "Forme d'onde prête (cache).";
+                return;
+            }
+
             var data = await Task.Run(() => WaveformGenerator.GenerateAsync(_ffmpegPath, videoPath, numSamples, cts.Token), cts.Token);
             if (!cts.IsCancellationRequested)
             {
