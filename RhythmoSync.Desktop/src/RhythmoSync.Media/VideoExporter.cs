@@ -472,9 +472,12 @@ public static class VideoExporter
         return $"Export terminé : {frameCount} frames en {totalTime:0.0}s ({finalFps:0.0} fps effectifs)";
     }
 
+    private readonly record struct BandSpan(byte[] SourcePixels, int InTileX, int DestCol, int RunPx);
+
     /// <summary>
-    /// Copie les lignes de la bande dans la frame de sortie. Contrairement à la version
-    /// Rust (boucle par pixel), on copie des segments contigus par ligne et par tuile.
+    /// Copie les lignes de la bande dans la frame de sortie.
+    /// Les segments horizontaux (BandSpan) sont pré-calculés une seule fois par trame
+    /// au lieu d'être recalculés sur chaque ligne verticale (gain CPU majeur).
     /// </summary>
     private static void ComposeBandRows(
         byte[] outFrame, ExportSettings s, IBandStripSource band,
@@ -484,35 +487,47 @@ public static class VideoExporter
         var tileW = band.TileWidthPx;
         var bandTop = s.VideoRenderHeight;
 
+        // Précalcul des segments horizontaux une seule fois par trame
+        Span<BandSpan> spans = stackalloc BandSpan[4];
+        var spanCount = 0;
+        var col = 0;
+        while (col < width)
+        {
+            var srcX = stripX + col;
+            if (srcX < 0)
+            {
+                var run = Math.Min(width - col, -srcX);
+                spans[spanCount++] = new BandSpan(darkRow, 0, col, run);
+                col += run;
+            }
+            else if (srcX >= band.TotalWidthPx)
+            {
+                var run = width - col;
+                spans[spanCount++] = new BandSpan(darkRow, 0, col, run);
+                col = width;
+            }
+            else
+            {
+                var tileIndex = srcX / tileW;
+                var inTileX = srcX % tileW;
+                var run = Math.Min(width - col, Math.Min(tileW - inTileX, band.TotalWidthPx - srcX));
+                var tilePixels = tile(tileIndex);
+                spans[spanCount++] = new BandSpan(tilePixels, inTileX, col, run);
+                col += run;
+            }
+        }
+
+        var activeSpans = spans[..spanCount];
         for (var row = 0; row < s.BandRenderHeight; row++)
         {
             var destBase = (bandTop + row) * width * 4;
-
-            var col = 0;
-            while (col < width)
+            for (var sIdx = 0; sIdx < activeSpans.Length; sIdx++)
             {
-                var srcX = stripX + col;
-                if (srcX < 0)
-                {
-                    // Avant le début de la bande : fond sombre
-                    var run = Math.Min(width - col, -srcX);
-                    Buffer.BlockCopy(darkRow, 0, outFrame, destBase + col * 4, run * 4);
-                    col += run;
-                }
-                else if (srcX >= band.TotalWidthPx)
-                {
-                    Buffer.BlockCopy(darkRow, 0, outFrame, destBase + col * 4, (width - col) * 4);
-                    col = width;
-                }
-                else
-                {
-                    var tileIndex = srcX / tileW;
-                    var inTileX = srcX % tileW;
-                    var run = Math.Min(width - col, Math.Min(tileW - inTileX, band.TotalWidthPx - srcX));
-                    var tilePixels = tile(tileIndex);
-                    Buffer.BlockCopy(tilePixels, (row * tileW + inTileX) * 4, outFrame, destBase + col * 4, run * 4);
-                    col += run;
-                }
+                ref readonly var span = ref activeSpans[sIdx];
+                var srcOffset = ReferenceEquals(span.SourcePixels, darkRow)
+                    ? 0
+                    : (row * tileW + span.InTileX) * 4;
+                Buffer.BlockCopy(span.SourcePixels, srcOffset, outFrame, destBase + span.DestCol * 4, span.RunPx * 4);
             }
         }
     }
