@@ -31,8 +31,10 @@ public partial class ExportDialog : Window
         ("1080p", 8.0),
     ];
 
+    private readonly List<(string Label, double Fps)> _fpsPresets = [];
+
     public ExportDialog(ProjectState state, string videoPath, string ffmpegPath,
-        double duration, int nativeWidth, int nativeHeight)
+        double duration, int nativeWidth, int nativeHeight, double sourceFps = 0)
     {
         InitializeComponent();
         _state = state;
@@ -48,6 +50,27 @@ public partial class ExportDialog : Window
         EncoderCombo.Items.Add("Auto (GPU si disponible)");
         EncoderCombo.Items.Add("CPU (libx264)");
         EncoderCombo.SelectedIndex = 0;
+
+        // Cadence (FPS) : Source par défaut, puis standards
+        var effectiveSourceFps = sourceFps > 0 ? sourceFps : _state.Fps;
+        _fpsPresets.Add(($"Source ({effectiveSourceFps:0.###} fps — natif)", effectiveSourceFps));
+        var standards = new (string Label, double Fps)[]
+        {
+            ("23.976 fps (Cinéma NTSC)", 23.976),
+            ("24 fps (Cinéma)", 24.0),
+            ("25 fps (PAL / TV)", 25.0),
+            ("29.97 fps (NTSC)", 29.97),
+            ("30 fps (Web)", 30.0),
+            ("50 fps (Haute fluidité)", 50.0),
+            ("60 fps (Haute fluidité)", 60.0),
+        };
+        foreach (var (label, fps) in standards)
+        {
+            if (Math.Abs(fps - effectiveSourceFps) > 0.05)
+                _fpsPresets.Add((label, fps));
+        }
+        foreach (var (label, _) in _fpsPresets) FpsCombo.Items.Add(label);
+        FpsCombo.SelectedIndex = 0;
 
         RangeEndBox.Text = duration.ToString("0.##", CultureInfo.InvariantCulture);
 
@@ -170,6 +193,9 @@ public partial class ExportDialog : Window
         var detectLetterbox = LetterboxCheck.IsChecked == true;
         var bandScale = BandScaleSlider.Value;
         var resolutionLabel = (string)ResolutionCombo.SelectedItem;
+        var selectedFps = FpsCombo.SelectedIndex >= 0 && FpsCombo.SelectedIndex < _fpsPresets.Count
+            ? _fpsPresets[FpsCombo.SelectedIndex].Fps
+            : _state.Fps;
 
         SetExportingUi(true);
         _cts = new CancellationTokenSource();
@@ -203,7 +229,7 @@ public partial class ExportDialog : Window
                 VideoPath = _videoPath,
                 OutputPath = saveDialog.FileName,
                 VideoWidth = _nativeWidth,
-                Fps = _state.Fps,
+                Fps = selectedFps,
                 Bitrate = (long)(mbps * 1_000_000),
                 CropTop = cropTop,
                 CropBottom = cropBottom,
@@ -223,7 +249,7 @@ public partial class ExportDialog : Window
                 Takes = CollectTakes(),
                 ForceCpuEncoder = forceCpu,
                 Title = $"{videoName} — RhythmoSync Master",
-                Comment = $"Bande rythmo : {actualLanes} piste(s), {dialogues.Count} bloc(s) — {resolutionLabel} @ {_state.Fps}fps",
+                Comment = $"Bande rythmo : {actualLanes} piste(s), {dialogues.Count} bloc(s) — {resolutionLabel} @ {selectedFps:0.###}fps",
                 Description = $"Exporté par RhythmoSync Studio le {DateTimeOffset.Now:yyyy-MM-dd HH:mm}",
             };
 

@@ -66,6 +66,10 @@
                 <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Encodeur"/>
                 <ComboBox x:Name="EncoderCombo" Grid.Row="2" Grid.Column="1" Width="240" HorizontalAlignment="Left"
                           Margin="0,4" FontSize="12"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Cadence (FPS)"/>
+                <ComboBox x:Name="FpsCombo" Grid.Row="3" Grid.Column="1" Width="240" HorizontalAlignment="Left"
+                          Margin="0,4" FontSize="12"/>
             </Grid>
 
             <CheckBox x:Name="LetterboxCheck" Style="{StaticResource FieldCheck}" IsChecked="True"
