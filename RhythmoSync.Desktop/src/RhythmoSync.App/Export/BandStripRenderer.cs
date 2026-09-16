@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -10,16 +11,25 @@ namespace RhythmoSync.App.Export;
 /// <summary>
 /// Rend la bande rythmo en tuiles BGRA pour l'export vidéo, avec le même style que
 /// RhythmoBandControl à l'écran, en mode « propre » : sans poignées, sans alertes
-/// « trop rapide », sans indicateur de snap. Les tuiles sont rendues paresseusement
-/// (RenderTargetBitmap), ce qui supprime le plafond de 32 000 px de l'ancien export.
+/// « trop rapide », sans indicateur de snap.
+/// Les tuiles sont rendues sur un thread STA dédié en arrière-plan sans bloquer
+/// le thread UI principal de l'application (Dispatcher.Invoke éliminé).
 /// </summary>
-public sealed class BandStripRenderer : IBandStripSource
+public sealed class BandStripRenderer : IBandStripSource, IDisposable
 {
     private readonly IReadOnlyList<DialogueBlock> _dialogues;
     private readonly int _lanes;
     private readonly double _laneHeight;   // hauteur d'une piste, déjà mise à l'échelle
     private readonly double _pps;          // pixels par seconde dans l'export
     private readonly double _scale;        // laneScale (épaisseurs, polices, rayons)
+
+    private readonly ConcurrentDictionary<int, byte[]> _tileCache = new();
+    private readonly BlockingCollection<RenderTask> _taskQueue = new();
+    private readonly CancellationTokenSource _cts = new();
+    private readonly Thread _staWorker;
+    private bool _disposed;
+
+    private sealed record RenderTask(int TileIndex, TaskCompletionSource<byte[]> Tcs);
 
     public int TotalWidthPx { get; }
     public int HeightPx { get; }
@@ -36,6 +46,42 @@ public sealed class BandStripRenderer : IBandStripSource
         _pps = pps;
         _scale = scale;
         TotalWidthPx = Math.Max(TileWidthPx, (int)Math.Ceiling(videoDuration * pps));
+
+        _staWorker = new Thread(StaWorkerLoop)
+        {
+            Name = "BandStripRenderer-STA",
+            IsBackground = true,
+        };
+        _staWorker.SetApartmentState(ApartmentState.STA);
+        _staWorker.Start();
+    }
+
+    private void StaWorkerLoop()
+    {
+        try
+        {
+            foreach (var task in _taskQueue.GetConsumingEnumerable(_cts.Token))
+            {
+                try
+                {
+                    if (_tileCache.TryGetValue(task.TileIndex, out var cached))
+                    {
+                        task.Tcs.TrySetResult(cached);
+                    }
+                    else
+                    {
+                        var pixels = RenderTile(task.TileIndex);
+                        _tileCache[task.TileIndex] = pixels;
+                        task.Tcs.TrySetResult(pixels);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    task.Tcs.TrySetException(ex);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private static readonly Typeface BlockTypeface =
@@ -43,11 +89,28 @@ public sealed class BandStripRenderer : IBandStripSource
 
     public byte[] GetTile(int tileIndex)
     {
-        // Le rendu WPF doit se faire sur le thread UI ; l'export tourne en arrière-plan.
-        var app = Application.Current;
-        if (app is null || app.Dispatcher.CheckAccess())
-            return RenderTile(tileIndex);
-        return app.Dispatcher.Invoke(() => RenderTile(tileIndex));
+        if (_tileCache.TryGetValue(tileIndex, out var cached))
+            return cached;
+
+        if (Thread.CurrentThread == _staWorker)
+        {
+            var pixels = RenderTile(tileIndex);
+            _tileCache[tileIndex] = pixels;
+            return pixels;
+        }
+
+        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _taskQueue.Add(new RenderTask(tileIndex, tcs));
+        return tcs.Task.GetAwaiter().GetResult();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _cts.Cancel();
+        _taskQueue.CompleteAdding();
+        _tileCache.Clear();
     }
 
     private byte[] RenderTile(int tileIndex)

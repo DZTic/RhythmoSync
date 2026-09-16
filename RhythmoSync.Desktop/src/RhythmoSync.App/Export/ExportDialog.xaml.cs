@@ -219,7 +219,7 @@ public partial class ExportDialog : Window
 
             // 3. Bande en tuiles, même style que l'écran (mode propre)
             ProgressLeft.Text = "Pré-rendu de la bande rythmo…";
-            var renderer = new BandStripRenderer(
+            using var renderer = new BandStripRenderer(
                 dialogues, actualLanes,
                 layout.BandRenderHeight, layout.ExportPps, layout.LaneScale, _duration);
 
