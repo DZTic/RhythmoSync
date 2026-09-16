@@ -94,4 +94,59 @@ public class SnapEngineTests
         Assert.Equal(2.0, result!.Value.SnappedTime, 9);
         Assert.Equal(SnapTargetKind.BlockEdge, result.Value.Kind);
     }
+
+    [Fact]
+    public void SnapMove_LargeSortedList_SnapsAccurately()
+    {
+        var blocks = new List<DialogueBlock>(5000);
+        for (var i = 0; i < 5000; i++)
+        {
+            blocks.Add(Block($"b_{i}", start: i * 2.0, dur: 1.0));
+        }
+
+        // Cible proche du bord de fin de b_2500 (start=5000, end=5001)
+        var result = SnapEngine.SnapMove(
+            rawStartTime: 5001.03, duration: 1.0, blockId: "moving",
+            all: blocks, targetSyncTime: 0, zoom: Zoom);
+
+        Assert.NotNull(result);
+        Assert.Equal(5001.0, result!.Value.SnappedTime, 9);
+        Assert.Equal(SnapTargetKind.BlockEdge, result.Value.Kind);
+    }
+
+    [Fact]
+    public void SnapEdge_LargeSortedList_SnapsAccurately()
+    {
+        var blocks = new List<DialogueBlock>(5000);
+        for (var i = 0; i < 5000; i++)
+        {
+            blocks.Add(Block($"b_{i}", start: i * 2.0, dur: 1.0));
+        }
+
+        var result = SnapEngine.SnapEdge(
+            rawTime: 6000.03, blockId: "moving",
+            all: blocks, targetSyncTime: 0, zoom: Zoom);
+
+        Assert.NotNull(result);
+        Assert.Equal(6000.0, result!.Value.SnappedTime, 9);
+        Assert.Equal(SnapTargetKind.BlockEdge, result.Value.Kind);
+    }
+
+    [Fact]
+    public void SnapMove_UnsortedList_FallsBackAndSnaps()
+    {
+        var blocks = new List<DialogueBlock>
+        {
+            Block("b1", start: 100.0, dur: 1.0),
+            Block("b2", start: 10.0, dur: 1.0),
+            Block("b3", start: 50.0, dur: 1.0),
+        };
+
+        var result = SnapEngine.SnapMove(
+            rawStartTime: 10.02, duration: 1.0, blockId: "moving",
+            all: blocks, targetSyncTime: 0, zoom: Zoom);
+
+        Assert.NotNull(result);
+        Assert.Equal(10.0, result!.Value.SnappedTime, 9);
+    }
 }

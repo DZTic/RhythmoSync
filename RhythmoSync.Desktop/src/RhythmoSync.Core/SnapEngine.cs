@@ -14,6 +14,7 @@ public readonly record struct SnapResult(double SnappedTime, double IndicatorTim
 public static class SnapEngine
 {
     private const double ThresholdPx = 15;
+    private const double MaxBlockLookbackSeconds = 60.0;
 
     /// <summary>
     /// Snap du déplacement d'un bloc : son début ou sa fin peut accrocher la ligne
@@ -52,13 +53,39 @@ public static class SnapEngine
         TryStart(targetSyncTime, SnapTargetKind.SyncLine);
         TryEnd(targetSyncTime, SnapTargetKind.SyncLine);
 
-        foreach (var other in all)
+        if (all.Count == 0) return best;
+
+        var minCandidate = Math.Min(rawStartTime, endTime) - threshold;
+        var maxCandidate = Math.Max(rawStartTime, endTime) + threshold;
+
+        var isSorted = all.Count < 2 || all[0].StartTime <= all[^1].StartTime;
+
+        if (isSorted)
         {
-            if (other.Id == blockId) continue;
-            TryStart(other.StartTime, SnapTargetKind.BlockEdge);
-            TryStart(other.EndTime, SnapTargetKind.BlockEdge);
-            TryEnd(other.StartTime, SnapTargetKind.BlockEdge);
-            TryEnd(other.EndTime, SnapTargetKind.BlockEdge);
+            var startIndex = FindStartIndex(all, minCandidate - MaxBlockLookbackSeconds);
+            for (var i = startIndex; i < all.Count; i++)
+            {
+                var other = all[i];
+                if (other.StartTime > maxCandidate) break;
+                if (other.EndTime < minCandidate) continue;
+                if (other.Id == blockId) continue;
+
+                TryStart(other.StartTime, SnapTargetKind.BlockEdge);
+                TryStart(other.EndTime, SnapTargetKind.BlockEdge);
+                TryEnd(other.StartTime, SnapTargetKind.BlockEdge);
+                TryEnd(other.EndTime, SnapTargetKind.BlockEdge);
+            }
+        }
+        else
+        {
+            foreach (var other in all)
+            {
+                if (other.Id == blockId) continue;
+                TryStart(other.StartTime, SnapTargetKind.BlockEdge);
+                TryStart(other.EndTime, SnapTargetKind.BlockEdge);
+                TryEnd(other.StartTime, SnapTargetKind.BlockEdge);
+                TryEnd(other.EndTime, SnapTargetKind.BlockEdge);
+            }
         }
 
         return best;
@@ -87,13 +114,61 @@ public static class SnapEngine
         }
 
         Try(targetSyncTime, SnapTargetKind.SyncLine);
-        foreach (var other in all)
+
+        if (all.Count == 0) return best;
+
+        var minCandidate = rawTime - threshold;
+        var maxCandidate = rawTime + threshold;
+
+        var isSorted = all.Count < 2 || all[0].StartTime <= all[^1].StartTime;
+
+        if (isSorted)
         {
-            if (other.Id == blockId) continue;
-            Try(other.StartTime, SnapTargetKind.BlockEdge);
-            Try(other.EndTime, SnapTargetKind.BlockEdge);
+            var startIndex = FindStartIndex(all, minCandidate - MaxBlockLookbackSeconds);
+            for (var i = startIndex; i < all.Count; i++)
+            {
+                var other = all[i];
+                if (other.StartTime > maxCandidate) break;
+                if (other.EndTime < minCandidate) continue;
+                if (other.Id == blockId) continue;
+
+                Try(other.StartTime, SnapTargetKind.BlockEdge);
+                Try(other.EndTime, SnapTargetKind.BlockEdge);
+            }
+        }
+        else
+        {
+            foreach (var other in all)
+            {
+                if (other.Id == blockId) continue;
+                Try(other.StartTime, SnapTargetKind.BlockEdge);
+                Try(other.EndTime, SnapTargetKind.BlockEdge);
+            }
         }
 
         return best;
+    }
+
+    private static int FindStartIndex(IReadOnlyList<DialogueBlock> list, double minStartTime)
+    {
+        int low = 0;
+        int high = list.Count - 1;
+        int result = 0;
+
+        while (low <= high)
+        {
+            int mid = low + (high - low) / 2;
+            if (list[mid].StartTime >= minStartTime)
+            {
+                result = mid;
+                high = mid - 1;
+            }
+            else
+            {
+                low = mid + 1;
+            }
+        }
+
+        return result;
     }
 }
