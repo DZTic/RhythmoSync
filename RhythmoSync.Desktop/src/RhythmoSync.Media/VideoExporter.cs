@@ -227,20 +227,7 @@ public static class VideoExporter
         var inv = CultureInfo.InvariantCulture;
 
         // --- Processus décodeur : vidéo source → frames BGRA brutes sur stdout ---
-        var decoderPsi = RawProcess(s.FfmpegPath);
-        AddArgs(decoderPsi,
-            "-hide_banner", "-loglevel", "error",
-            "-hwaccel", "auto",
-            "-ss", s.StartTime.ToString("0.######", inv),
-            "-i", s.VideoPath,
-            "-t", rangeDuration.ToString("0.######", inv),
-            "-vf", string.Format(inv,
-                "setpts=PTS-STARTPTS,crop={0}:{1}:0:{2},scale={3}:{4}:force_original_aspect_ratio=decrease,pad={3}:{4}:(ow-iw)/2:(oh-ih)/2,fps={5}",
-                s.VideoWidth, cropH, s.CropTop, s.ExportWidth, s.VideoRenderHeight, s.Fps),
-            "-f", "rawvideo", "-pix_fmt", "bgra", "-an",
-            "pipe:1");
-        decoderPsi.RedirectStandardOutput = true;
-        decoderPsi.RedirectStandardError = true;
+        var decoderPsi = CreateDecoderProcessInfo(s, rangeDuration, cropH, inv);
 
         // --- Processus encodeur : frames composées sur stdin (+ audio source) → MP4 ---
         var encoderPsi = RawProcess(s.FfmpegPath);
@@ -283,9 +270,8 @@ public static class VideoExporter
                     AddTimedInput(s.VideoPath, s.StartTime);
                     AddArgs(encoderPsi,
                         "-map", "0:v", "-map", "1:a:0?",
-                        "-c:a", "aac", "-b:a", "192k");
-                    if (originalGain < 1)
-                        AddArgs(encoderPsi, "-af", string.Format(inv, "volume={0:0.####}", originalGain));
+                        "-c:a", "aac", "-b:a", "192k",
+                        "-af", BuildAudioFilter(originalGain, inv));
                     audioMapped = true;
                 }
                 // originalGain == 0 et rien d'autre à mixer → export muet, voulu
@@ -313,7 +299,7 @@ public static class VideoExporter
                         var (path, gain, ss, delay) = audioInputs[i];
                         AddTimedInput(path, ss);
                         // L'entrée 0 est la vidéo brute sur stdin → audio à partir de 1
-                        var chain = string.Format(inv, "[{0}:a:0]volume={1:0.####}", i + 1, gain);
+                        var chain = string.Format(inv, "[{0}:a:0]asetpts=PTS-STARTPTS,volume={1:0.####}", i + 1, gain);
                         if (delay > 0.0005)
                             chain += string.Format(inv, ",adelay=delays={0}:all=1", (long)Math.Round(delay * 1000));
                         chains.Add(chain + string.Format(inv, "[a{0}]", i));
@@ -571,6 +557,32 @@ public static class VideoExporter
         {
             return false;
         }
+    }
+
+    internal static ProcessStartInfo CreateDecoderProcessInfo(ExportSettings s, double rangeDuration, int cropH, CultureInfo inv)
+    {
+        var decoderPsi = RawProcess(s.FfmpegPath);
+        AddArgs(decoderPsi,
+            "-hide_banner", "-loglevel", "error",
+            "-hwaccel", "auto",
+            "-ss", s.StartTime.ToString("0.######", inv),
+            "-i", s.VideoPath,
+            "-t", rangeDuration.ToString("0.######", inv),
+            "-vf", string.Format(inv,
+                "setpts=PTS-STARTPTS,crop={0}:{1}:0:{2},scale={3}:{4}:force_original_aspect_ratio=decrease,pad={3}:{4}:(ow-iw)/2:(oh-ih)/2,fps={5}",
+                s.VideoWidth, cropH, s.CropTop, s.ExportWidth, s.VideoRenderHeight, s.Fps),
+            "-f", "rawvideo", "-pix_fmt", "bgra", "-an",
+            "pipe:1");
+        decoderPsi.RedirectStandardOutput = true;
+        decoderPsi.RedirectStandardError = true;
+        return decoderPsi;
+    }
+
+    internal static string BuildAudioFilter(double originalGain, CultureInfo inv)
+    {
+        return originalGain < 1
+            ? string.Format(inv, "asetpts=PTS-STARTPTS,volume={0:0.####}", originalGain)
+            : "asetpts=PTS-STARTPTS";
     }
 
     private static ProcessStartInfo RawProcess(string path) => new(path)
