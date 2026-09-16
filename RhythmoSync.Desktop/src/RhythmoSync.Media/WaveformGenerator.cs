@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace RhythmoSync.Media;
 
@@ -21,10 +24,103 @@ public static class WaveformGenerator
     /// </summary>
     public const int TargetSampleRate = 8000;
 
+    public static string CacheDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "RhythmoSync Studio", "waveforms");
+
+    /// <summary>
+    /// Retourne le chemin du fichier cache .wavecache pour cette source et cette résolution.
+    /// </summary>
+    public static string GetCachePath(string mediaPath, int numSamples)
+    {
+        var info = new FileInfo(mediaPath);
+        var key = $"{mediaPath}|{(info.Exists ? info.Length : 0)}|{(info.Exists ? info.LastWriteTimeUtc.Ticks : 0)}|{numSamples}";
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16].ToLowerInvariant();
+        var stem = Path.GetFileNameWithoutExtension(mediaPath);
+        return Path.Combine(CacheDir, $"{stem}_{hash}.wavecache");
+    }
+
+    /// <summary>
+    /// Tente de charger la forme d'onde depuis le cache disque persistant.
+    /// </summary>
+    public static WaveformData? TryLoadFromDiskCache(string mediaPath, int numSamples)
+    {
+        try
+        {
+            var path = GetCachePath(mediaPath, numSamples);
+            if (!File.Exists(path)) return null;
+
+            using var stream = File.OpenRead(path);
+            using var reader = new BinaryReader(stream);
+
+            var magic = reader.ReadInt32(); // 0x45564157 pour "WAVE"
+            if (magic != 0x45564157) return null;
+
+            var version = reader.ReadInt32();
+            if (version != 1) return null;
+
+            var duration = reader.ReadDouble();
+            var sampleRate = reader.ReadInt32();
+            var peaksCount = reader.ReadInt32();
+            if (peaksCount <= 0 || peaksCount > 1_000_000) return null;
+
+            var peaks = new float[peaksCount];
+            var byteCount = peaksCount * sizeof(float);
+            var span = MemoryMarshal.AsBytes(peaks.AsSpan());
+            var totalRead = 0;
+            while (totalRead < byteCount)
+            {
+                var read = stream.Read(span[totalRead..]);
+                if (read == 0) return null;
+                totalRead += read;
+            }
+
+            return new WaveformData(peaks, duration, sampleRate);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Enregistre les données de forme d'onde dans le cache disque persistant de manière atomique.
+    /// </summary>
+    public static void SaveToDiskCache(string mediaPath, int numSamples, WaveformData data)
+    {
+        try
+        {
+            Directory.CreateDirectory(CacheDir);
+            var path = GetCachePath(mediaPath, numSamples);
+            var tempPath = path + ".tmp";
+
+            using (var stream = File.Create(tempPath))
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(0x45564157); // "WAVE"
+                writer.Write(1);          // version 1
+                writer.Write(data.Duration);
+                writer.Write(data.SampleRate);
+                writer.Write(data.Peaks.Length);
+                var span = MemoryMarshal.AsBytes(data.Peaks.AsSpan());
+                stream.Write(span);
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            // Ignorer silencieusement si l'écriture échoue
+        }
+    }
+
     public static async Task<WaveformData> GenerateAsync(
         string ffmpegPath, string mediaPath, int numSamples, CancellationToken ct = default)
     {
         numSamples = Math.Clamp(numSamples, 128, 65536);
+
+        if (TryLoadFromDiskCache(mediaPath, numSamples) is { } cached)
+            return cached;
 
         var (duration, _) = await ProbeAsync(ffmpegPath, mediaPath, ct);
 
@@ -92,7 +188,9 @@ public static class WaveformGenerator
         if (sampleIndex < 1)
             throw new InvalidDataException("Aucune donnée audio trouvée dans le fichier.");
 
-        return new WaveformData(peaks, duration, TargetSampleRate);
+        var result = new WaveformData(peaks, duration, TargetSampleRate);
+        SaveToDiskCache(mediaPath, numSamples, result);
+        return result;
 
         void Accumulate(short sample)
         {
