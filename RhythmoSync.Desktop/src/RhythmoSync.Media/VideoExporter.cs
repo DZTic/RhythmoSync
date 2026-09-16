@@ -406,6 +406,8 @@ public static class VideoExporter
                 darkRow[i * 4] = 0x27; darkRow[i * 4 + 1] = 0x18; darkRow[i * 4 + 2] = 0x11; darkRow[i * 4 + 3] = 0xFF;
             }
 
+            var spans = new BandSpan[16];
+
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
@@ -428,7 +430,7 @@ public static class VideoExporter
                 // Partie basse : section défilante de la bande (copies de segments par ligne)
                 var time = s.StartTime + frameCount / s.Fps;
                 var stripX = (int)Math.Floor((time + s.SyncOffsetEffective) * s.Pps);
-                ComposeBandRows(outFrame, s, band, Tile, stripX, darkRow);
+                ComposeBandRows(outFrame, s, band, Tile, stripX, darkRow, spans);
 
                 // Ligne de synchro rouge (2 px) par-dessus la bande
                 DrawSyncLine(outFrame, s);
@@ -481,14 +483,13 @@ public static class VideoExporter
     /// </summary>
     private static void ComposeBandRows(
         byte[] outFrame, ExportSettings s, IBandStripSource band,
-        Func<int, byte[]> tile, int stripX, byte[] darkRow)
+        Func<int, byte[]> tile, int stripX, byte[] darkRow, BandSpan[] spans)
     {
         var width = s.ExportWidth;
         var tileW = band.TileWidthPx;
         var bandTop = s.VideoRenderHeight;
 
         // Précalcul des segments horizontaux une seule fois par trame
-        Span<BandSpan> spans = stackalloc BandSpan[4];
         var spanCount = 0;
         var col = 0;
         while (col < width)
@@ -517,7 +518,7 @@ public static class VideoExporter
             }
         }
 
-        var activeSpans = spans[..spanCount];
+        var activeSpans = spans.AsSpan(0, spanCount);
         for (var row = 0; row < s.BandRenderHeight; row++)
         {
             var destBase = (bandTop + row) * width * 4;
