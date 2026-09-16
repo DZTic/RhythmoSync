@@ -154,4 +154,44 @@ public class SubtitleIoTests
     {
         Assert.Throws<System.NotSupportedException>(() => SubtitleIo.Parse("x", "file.ass"));
     }
+
+    [Fact]
+    public void ParseSrt_CrLfLineEndings_ParsesCorrectly()
+    {
+        const string srt = "1\r\n00:01:00,000 --> 00:01:05,000\r\nLigne 1\r\nLigne 2\r\n\r\n2\r\n00:02:00,000 --> 00:02:04,000\r\nDeuxième\r\n";
+        var parsed = SubtitleIo.ParseSrt(srt);
+
+        Assert.Equal(2, parsed.Count);
+        Assert.Equal(60, parsed[0].StartTime);
+        Assert.Equal(5, parsed[0].Duration);
+        Assert.Equal("Ligne 1\nLigne 2", parsed[0].Text);
+        Assert.Equal(120, parsed[1].StartTime);
+    }
+
+    [Fact]
+    public void ParseVtt_ShortTimeFormat_ParsesCorrectly()
+    {
+        const string vtt = "WEBVTT\n\n01:23.450 --> 02:00.000\nFormat court\n";
+        var parsed = SubtitleIo.ParseVtt(vtt);
+
+        Assert.Single(parsed);
+        Assert.Equal(83.45, parsed[0].StartTime, 2);
+        Assert.Equal(36.55, parsed[0].Duration, 2);
+    }
+
+    [Fact]
+    public void ParseSrt_LargeVolume_ParsesAccurately()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < 2000; i++)
+        {
+            sb.Append(i + 1).Append("\n")
+              .Append("00:01:00,000 --> 00:01:05,000\n")
+              .Append("Replique ").Append(i).Append("\n\n");
+        }
+
+        var parsed = SubtitleIo.ParseSrt(sb.ToString());
+        Assert.Equal(2000, parsed.Count);
+        Assert.Equal("Replique 1999", parsed[1999].Text);
+    }
 }
