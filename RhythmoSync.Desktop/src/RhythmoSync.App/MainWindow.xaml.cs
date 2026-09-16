@@ -319,18 +319,10 @@ public partial class MainWindow : Window
             _anchorTicks = now;
         }
         var time = mediaPos;
-        // On n'extrapole PAS tant que la lecture n'a pas confirmé qu'elle avance
-        // (_playKickTicks != 0 = on attend le premier palier après Play). Sinon, à la
-        // reprise, l'extrapolation court devant la position réelle pendant la latence
-        // variable du décodeur, puis « revient » d'un coup quand Media.Position se met
-        // à jour → saccade intermittente. On affiche donc la position brute jusqu'à ce
-        // que le décodeur reparte vraiment, puis on reprend le lissage par extrapolation.
-        if (_isPlaying && _playKickTicks == 0)
+        // Extrapolation continue dès le lancement de la lecture pour éviter le gel de 150-300 ms
+        // et le saut discontinu au démarrage du décodeur.
+        if (_isPlaying)
         {
-            // Extrapolation entre deux paliers de Media.Position pour un défilement
-            // fluide. Bornée : si la vidéo se fige (décodeur en retard), Media.Position
-            // cesse d'avancer ; sans borne, la timeline s'emballerait devant l'image.
-            // La marge couvre l'écart normal entre paliers, mais empêche l'emballement.
             var extrapolated = (now - _anchorTicks) / (double)Stopwatch.Frequency * _playbackRate;
             time += Math.Min(extrapolated, MaxExtrapolationSeconds);
         }
@@ -465,14 +457,13 @@ public partial class MainWindow : Window
             _mixer?.Play();
             // Les prises sont (ré)activées par TakeMixer.Update dès que l'image défile.
             _isPlaying = true;
-            // Ré-ancre l'horloge sur la position courante : sans ça, l'ancre du
-            // Stopwatch datait d'avant la pause et l'extrapolation sautait d'un coup
-            // au plafond (+0,5 s) puis « revenait » à la mise à jour de Media.Position
-            // → saccade visible à chaque reprise.
-            _lastMediaPos = -1;
+            // Ré-ancre l'horloge sur la position courante et initialise l'extrapolation immédiate.
+            var now = Stopwatch.GetTimestamp();
+            _lastMediaPos = Media.Position.TotalSeconds;
+            _anchorTicks = now;
             // Arme le garde-fou : si Media.Position n'avance pas, OnRendering relancera.
-            _playKickPos = Media.Position.TotalSeconds;
-            _playKickTicks = Stopwatch.GetTimestamp();
+            _playKickPos = _lastMediaPos;
+            _playKickTicks = now;
             _playKickAttempts = 0;
         }
         Band.IsPlaying = _isPlaying;
